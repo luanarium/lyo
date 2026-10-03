@@ -8,3 +8,6 @@ var/
 # sqlite sidecars
 *.db-wal
 *.db-shm
+
+# build output
+dist/

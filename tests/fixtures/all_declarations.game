@@ -1,0 +1,133 @@
+# Exercises all thirteen declarations.
+
+game "Kairos":
+  players start at "Oakhaven Village" with 20 hp, 10 gold
+
+location "Oakhaven Village":
+  "Timber halls ring a muddy square."
+  has inn, shop
+  north to "Whispering Woods"
+  south to "Kingsroad"
+  npc "Elder Thomas" as "village elder":
+    says "The woods have grown restless of late."
+
+location "Whispering Woods":
+  "Ancient oaks crowd the path."
+  south to "Oakhaven Village"
+  spawns "Goblin Scout", "Dire Wolf"
+
+monster "Goblin Scout":
+  12 hp, 3 str, 7 agi, 2 int
+  drops 2 to 5 gold
+  drops "Goblin Ear"
+  drops "Rusty Cleaver" 10% of the time
+
+monster "Skeleton Guard":
+  22 hp, 7 str, 3 agi, 1 int
+  drops 8 to 15 gold
+  drops 1 to 2 "Bone Fragment"
+
+item "Iron Sword" is a weapon:
+  4 damage scaling str
+
+item "Boiled Leather Vest" is body armor:
+  3 def
+  costs 28 gold
+
+item "Fists" is the default weapon:
+  1 damage scaling str
+
+item "Lucky Copper Coin" is an accessory:
+  costs 25 gold
+  grants 1 luck
+
+item "Health Potion" is consumable:
+  also known as "potion"
+  on use:
+    refuse "You are already at full health." when hp is max_hp
+    restore 8 hp
+
+class "Warrior":
+  "A stalwart fighter who trades speed for raw power."
+  8 str, 5 agi, 3 int, 5 mp
+  starts with "Iron Sword", "Wooden Shield"
+  starts carrying 2 "Health Potion"
+
+spell "Fireball":
+  costs 5 mp
+  deals 3 + int / 2 damage scaling int
+  provokes retaliation
+  known by all
+
+track str:
+  advances when attacking with a weapon scaling str
+  next point costs 5 + 2 * str uses
+  raises str by 1
+
+track max_hp:
+  advances when taking damage
+  next point costs 5 uses
+  raises max_hp by 2 and heals 2
+
+verb attack <weapon?> <monster>:
+  public
+  refuse "You have fallen." unless alive
+  deal atk at least 1 to monster
+  then for every living monster here:
+    deal its str - def at least 1 to player
+  say "{damage.sources} strike back for {damage.total}."
+
+verb rest:
+  public
+  refuse "There is no inn here." unless here.inn
+  refuse "You are already rested." when hp is max_hp and mp is max_mp
+  restore all hp, all mp
+  say "{player} wakes restored."
+
+flow register:
+  private
+  refuse "You already have a character." when registered
+  ask name: "What is your character's name?"
+    accepts any text, trimmed
+    times out after 120 seconds
+  ask chosen: "Choose a class:"
+    offers every class by number, name
+    reprompts forever
+    times out after 120 seconds
+  create player named name as chosen
+  say "{name} the {chosen} begins in {start}."
+
+flow shop:
+  private
+  refuse "There is no shop here." unless here.shop
+  show stock
+  loop:
+    ask choice:
+      accepts "done", "exit", "leave", "cancel", "quit" to stop
+      accepts any item in stock to buy it
+      times out after 120 seconds
+
+offer duel from <player> to <player>:
+  public
+  requires both alive, both here
+  refuse "Already dueling." when either dueling
+  expires after 60 seconds, saying "The challenge expired."
+  accepted by verb accept
+  declined by verb decline
+  while active:
+    turn based, alternating
+    armor applies
+    no retaliation
+    ends when either hp is 0, with no prize
+
+rules:
+  define def as armor.def + shield.def
+  define atk as weapon.damage + weapon.scales / 2
+  on kill monster:
+    roll gold in monster.gold
+    split gold evenly among contributors, remainder to killer
+  on enter location:
+    respawn all monsters here unless other_player_here
+
+shop at "Oakhaven Village":
+  stocks "Padded Sling", "Thick Leather Gloves", "Rusty Cleaver"

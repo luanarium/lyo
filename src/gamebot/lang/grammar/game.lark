@@ -1,0 +1,207 @@
+// The gamebot game language.
+//
+// LALR(1), indentation-delimited. Thirteen top-level declarations. Keywords
+// are literal strings, so they outrank NAME in the contextual lexer; every
+// other identifier (stats, units, directions, slots) stays open, which is why
+// a game can invent `luck` or `down` without touching this file.
+//
+// Message interpolation ({player}, {damage.total}) is deliberately NOT parsed
+// here: a STRING is opaque to the grammar and its placeholders are bound in
+// the resolve pass, where the surrounding scope is known.
+
+start: _NL? declaration+
+
+declaration: game_decl
+           | location_decl
+           | monster_decl
+           | item_decl
+           | class_decl
+           | spell_decl
+           | track_decl
+           | verb_decl
+           | flow_decl
+           | offer_decl
+           | rules_decl
+           | shop_decl
+
+// ===================== declarations =====================
+
+game_decl: "game" STRING ":" _NL _INDENT game_stmt+ _DEDENT
+game_stmt: "players" "start" "at" STRING "with" amount_list _NL -> players_start
+
+location_decl: "location" STRING ":" _NL _INDENT location_stmt+ _DEDENT
+location_stmt: STRING _NL                                    -> description
+             | "has" name_list _NL                           -> features
+             | "spawns" string_list _NL                      -> spawns
+             | ["one" "way"] NAME "to" STRING _NL             -> exit
+             | npc_decl
+
+npc_decl: "npc" STRING "as" STRING ":" _NL _INDENT npc_stmt+ _DEDENT
+npc_stmt: "says" STRING _NL                                  -> says
+
+monster_decl: "monster" STRING ":" _NL _INDENT monster_stmt+ _DEDENT
+monster_stmt: quantity_list _NL                              -> stats
+            | "drops" range? (NAME | STRING) chance? _NL     -> drop
+
+item_decl: "item" STRING "is" item_kind ":" _NL _INDENT item_stmt+ _DEDENT
+item_kind: "the" "default" kind_name                         -> default_kind
+         | ["a" | "an"] kind_name                            -> kind
+kind_name: NAME NAME?
+item_stmt: quantity_list _NL                                 -> attrs
+         | "costs" quantity _NL                              -> costs
+         | "grants" quantity_list _NL                        -> grants
+         | "also" "known" "as" string_list _NL               -> aliases
+         | handler
+
+class_decl: "class" STRING ":" _NL _INDENT class_stmt+ _DEDENT
+class_stmt: STRING _NL                                       -> description
+          | quantity_list _NL                                -> stats
+          | "starts" "with" kit_list _NL                     -> starts_equipped
+          | "starts" "carrying" kit_list _NL                  -> starts_carried
+kit_list: kit_item ("," kit_item)*
+kit_item: NUMBER? STRING
+
+spell_decl: "spell" STRING ":" _NL _INDENT spell_stmt+ _DEDENT
+spell_stmt: "costs" quantity _NL                             -> costs
+          | _DEAL expr NAME ("scaling" NAME)? _NL            -> deals
+          | "provokes" "retaliation" _NL                     -> provokes
+          | "known" "by" name_list _NL                       -> known_by
+
+track_decl: "track" NAME ":" _NL _INDENT track_stmt+ _DEDENT
+track_stmt: "advances" "when" trigger _NL                    -> advances
+          | "next" "point" "costs" expr NAME _NL             -> cost
+          | "raises" NAME "by" NUMBER ("and" effect)? _NL    -> raises
+trigger: "attacking" ["with" ["a"] NAME] ["scaling" NAME]    -> on_attack
+       | "casting" ["a" "spell"] ["scaling" NAME]            -> on_cast
+       | "taking" "damage"                                   -> on_damage
+effect: NAME NUMBER
+
+verb_decl: "verb" NAME slot* ":" _NL _INDENT stmt+ _DEDENT
+slot: "<" NAME OPTIONAL? ">"
+
+flow_decl: "flow" NAME ":" _NL _INDENT stmt+ _DEDENT
+
+offer_decl: "offer" NAME "from" slot "to" slot ":" _NL _INDENT stmt+ _DEDENT
+
+rules_decl: "rules" ":" _NL _INDENT rules_stmt+ _DEDENT
+rules_stmt: "define" NAME "as" expr _NL                      -> define
+          | handler
+
+shop_decl: "shop" "at" STRING ":" _NL _INDENT shop_stmt+ _DEDENT
+shop_stmt: "stocks" string_list _NL                          -> stocks
+
+// ===================== statements =====================
+
+handler: "on" NAME NAME? ":" _NL _INDENT stmt+ _DEDENT
+
+stmt: visibility
+    | guard
+    | ask_stmt
+    | duel_stmt
+    | handler
+    | sequenced
+
+// `then` sequences any effectful statement, not just a single action.
+sequenced: ["then"] (action | each_stmt | loop_stmt)
+
+visibility: ("public" | "private") _NL
+
+guard: "refuse" STRING ("when" | "unless") expr _NL          -> refuse
+     | "requires" req_list _NL                               -> requires
+req_list: expr ("," expr)*
+
+action: _DEAL expr "to" ref _NL                              -> deal
+      | "restore" amount_list _NL                            -> restore
+      | "heal" expr _NL                                      -> heal
+      | "give" quantity "to" ref _NL                          -> give
+      | "take" quantity "from" ref _NL                        -> take
+      | "move" ref "to" ref _NL                              -> move
+      | "equip" ref _NL                                      -> equip
+      | "roll" NAME "in" ref _NL                             -> roll
+      | "split" NAME "evenly" "among" NAME ["," "remainder" "to" NAME] _NL -> split
+      | "respawn" "all" "monsters" "here" ["unless" expr] _NL -> respawn
+      | "say" STRING ("publicly" | "privately")? _NL         -> say
+      | "show" NAME _NL                                      -> show
+      | "create" "player" "named" NAME "as" NAME _NL         -> create_player
+      | "trigger" NAME _NL                                   -> trigger
+      | "buy" ref _NL                                        -> buy
+      | "stop" _NL                                           -> stop
+
+loop_stmt: "loop" ":" _NL _INDENT stmt+ _DEDENT
+each_stmt: "for" "every" selector ":" _NL _INDENT stmt+ _DEDENT
+selector: ["living"] NAME ["here"]
+
+ask_stmt: "ask" NAME ":" STRING? _NL _INDENT ask_opt+ _DEDENT
+ask_opt: "accepts" accept_spec _NL                           -> accepts
+       | "offers" "every" NAME "by" name_list _NL            -> offers
+       | "times" "out" "after" quantity _NL                  -> timeout
+       | "reprompts" "forever" _NL                           -> reprompts
+accept_spec: "any" NAME ("," "trimmed")?                     -> any_of
+           | "any" "item" "in" NAME ["to" action_word]        -> any_item_in
+           | "the" name_list                                  -> one_of_names
+           | string_list ["to" action_word]                   -> one_of_literals
+action_word: "stop"                                          -> aw_stop
+           | "buy" "it"                                       -> aw_buy
+
+duel_stmt: "expires" "after" quantity ["," "saying" STRING] _NL -> expires
+         | ("accepted" | "declined") "by" "verb" NAME _NL    -> resolved_by
+         | "while" "active" ":" _NL _INDENT duel_rule+ _DEDENT -> while_active
+duel_rule: "turn" "based" ["," "alternating"] _NL            -> turn_based
+         | "armor" "applies" _NL                             -> armor_applies
+         | "no" "retaliation" _NL                            -> no_retaliation
+         | "ends" "when" expr ["," "with" "no" "prize"] _NL   -> ends_when
+
+// ===================== expressions =====================
+
+?expr: or_expr
+?or_expr: and_expr ("or" and_expr)*
+?and_expr: not_expr ("and" not_expr)*
+?not_expr: "not" not_expr                                    -> logical_not
+         | comparison
+?comparison: sum (comp_op sum)?
+!comp_op: "is" "not" | "is" | ">=" | "<=" | ">" | "<"
+?sum: product (add_op product)*
+!add_op: "+" | "-"
+?product: clamp (mul_op clamp)*
+!mul_op: "*" | "/"
+?clamp: atom clamp_op*
+clamp_op: "at" "least" atom                                  -> at_least
+        | "at" "most" atom                                   -> at_most
+        | "capped" "at" atom                                 -> capped_at
+?atom: NUMBER                                                -> number
+     | PERCENT                                               -> percent
+     | STRING                                                -> literal
+     | "all" NAME                                            -> all_of
+     | "its" path                                            -> its
+     | QUANTIFIER path                                       -> quantified
+     | path
+     | NAME "(" expr ("," expr)* ")"                         -> call
+     | "(" expr ")"
+
+path: NAME ("." NAME)*
+ref: "its" path -> its | path
+amount_list: amount ("," amount)*
+amount: "all" NAME                                           -> all_of
+      | expr NAME                                            -> of
+quantity_list: quantity ("," quantity)*
+quantity: NUMBER NAME ("scaling" NAME)?
+range: NUMBER "to" NUMBER
+chance: PERCENT "of" "the" "time"
+name_list: NAME ("," NAME)*
+string_list: STRING ("," STRING)*
+
+// ===================== terminals =====================
+
+_DEAL: "deals" | "deal"
+QUANTIFIER.2: "both" | "either"   // outrank NAME where both are legal
+OPTIONAL: "?"
+NAME: /[a-zA-Z_][a-zA-Z_0-9]*/
+NUMBER: /\d+/
+PERCENT: /\d+%/
+STRING: /"[^"\n]*"/
+COMMENT: /#[^\n]*/
+_NL: /(\r?\n[\t \f]*)+/
+
+%declare _INDENT _DEDENT
+%ignore COMMENT
+%ignore /[\t \f]+/

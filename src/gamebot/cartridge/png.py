@@ -1,0 +1,100 @@
+"""PNG cartridges: a game's markdown source carried inside a PNG.
+
+The payload lives in a private ancillary chunk (`gaMe`), which the PNG spec
+reserves for exactly this and which every decoder ignores, so the file stays a
+perfectly ordinary image whose visible pixels are the cartridge label.
+
+stdlib only: no imaging library is needed to read or write a chunk.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import struct
+import zlib
+
+SIGNATURE = b"\x89PNG\r\n\x1a\n"
+CHUNK = b"gaMe"
+MAGIC = b"GBC1"
+#  Read these too: other tools write text into the standard chunks.
+TEXT_CHUNKS = (b"tEXt", b"zTXt", b"iTXt")
+
+
+class CartridgeError(Exception):
+    """A PNG carried no readable cartridge payload."""
+
+
+def _chunk(kind: bytes, data: bytes) -> bytes:
+    crc = zlib.crc32(kind + data) & 0xFFFFFFFF
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
+
+
+def _walk(png: bytes):
+    if not png.startswith(SIGNATURE):
+        raise CartridgeError("not a PNG file")
+    offset = len(SIGNATURE)
+    while offset + 12 <= len(png):
+        (length,) = struct.unpack(">I", png[offset : offset + 4])
+        kind = png[offset + 4 : offset + 8]
+        yield offset, kind, png[offset + 8 : offset + 8 + length]
+        offset += 12 + length
+        if kind == b"IEND":
+            return
+
+
+def pack(png: bytes, source: str) -> bytes:
+    """Return `png` with `source` embedded, replacing any existing payload."""
+    payload = source.encode("utf-8")
+    body = MAGIC + hashlib.sha256(payload).digest() + zlib.compress(payload, 9)
+
+    rebuilt, inserted = bytearray(SIGNATURE), False
+    for _, kind, data in _walk(png):
+        if kind == CHUNK:
+            continue  # drop the old payload
+        if kind == b"IEND" and not inserted:
+            rebuilt += _chunk(CHUNK, body)
+            inserted = True
+        rebuilt += _chunk(kind, data)
+    if not inserted:
+        raise CartridgeError("PNG has no IEND chunk")
+    return bytes(rebuilt)
+
+
+def unpack(png: bytes) -> str:
+    """Extract the markdown source from a cartridge."""
+    found = None
+    for _, kind, data in _walk(png):
+        if kind == CHUNK:
+            found = data
+            break
+        if kind in TEXT_CHUNKS and found is None:
+            found = data
+
+    if found is None:
+        raise CartridgeError(
+            "no cartridge payload in this PNG -- it may have been re-encoded, "
+            "which strips the chunk. Distribute cartridges as files, not as "
+            "images posted through services that recompress them."
+        )
+    if not found.startswith(MAGIC):
+        raise CartridgeError("cartridge payload is not in a format this version reads")
+
+    digest, compressed = found[4:36], found[36:]
+    try:
+        payload = zlib.decompress(compressed)
+    except zlib.error as exc:
+        raise CartridgeError(f"cartridge payload is corrupt: {exc}") from exc
+    if hashlib.sha256(payload).digest() != digest:
+        raise CartridgeError("cartridge checksum mismatch: the payload was altered")
+    return payload.decode("utf-8")
+
+
+def blank(width: int = 320, height: int = 200, rgb: tuple[int, int, int] = (26, 22, 37)) -> bytes:
+    """A plain PNG, so `pack` has something to write into when no art is given."""
+    raw = b"".join(b"\x00" + bytes(rgb) * width for _ in range(height))
+    return (
+        SIGNATURE
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + _chunk(b"IDAT", zlib.compress(raw, 9))
+        + _chunk(b"IEND", b"")
+    )
