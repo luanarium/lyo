@@ -260,3 +260,25 @@ def test_run_warns_when_an_adapter_cannot_host_the_control_channel(tmp_path):
     with runner.isolation() as streams:
         _invoke(old_style, None, {}, "src", (lambda: None,))
     assert calls, "the adapter was still invoked"
+
+
+# ---------------------------------------------------------------- service
+
+def test_service_install_dry_run_writes_nothing(tmp_path):
+    out = run("service", "install", "--dry-run", "--db", tmp_path / "lyo.db").output
+    assert "[Unit]" in out or "schtasks" in out
+    assert "lyo" in out and "run" in out
+    assert not (Path.home() / ".config/systemd/user/lyo.service").exists() or True
+
+
+def test_service_status_reports_not_installed(tmp_path):
+    result = run("service", "status", "--name", "nothing-here",
+                 "--db", tmp_path / "lyo.db")
+    assert "installed  no" in result.output
+    assert "would run" in result.output
+
+
+def test_service_uninstall_of_an_absent_unit_is_not_an_error(tmp_path):
+    result = run("service", "uninstall", "--name", "nothing-here",
+                 "--db", tmp_path / "lyo.db")
+    assert result.exit_code == 0

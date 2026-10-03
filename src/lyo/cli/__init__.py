@@ -587,3 +587,154 @@ def reload(db: Path | None) -> None:
     plural = "s" if warnings != 1 else ""
     note = f", {warnings} warning{plural}" if warnings else ""
     click.secho(f"reloaded {reply['reloaded']}{note}", fg="green")
+
+
+# --------------------------------------------------------------- the service
+
+@main.group()
+def service() -> None:
+    """Run and manage lyo as a service."""
+
+
+def _plan(name: str, db: Path | None, source: Path | None):
+    from lyo import service as svc
+
+    return svc.plan(name=name, db=_db_path(db), source=source)
+
+
+def _supervisor():
+    from lyo.service import ServiceError, supervisor
+
+    try:
+        return supervisor()
+    except ServiceError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _report(result) -> None:
+    click.secho(result.message, fg="green" if result.ok else "red")
+    if result.detail:
+        click.echo(f"  {result.detail}")
+    if not result.ok:
+        sys.exit(1)
+
+
+_name_option = click.option("--name", default="lyo", show_default=True,
+                            help="Instance name, for running more than one.")
+
+
+@service.command("install")
+@_name_option
+@click.argument("source", required=False,
+                type=click.Path(exists=True, path_type=Path))
+@click.option("--dry-run", is_flag=True,
+              help="Print the definition instead of writing it.")
+@click.option("--start", "and_start", is_flag=True, help="Start it afterwards.")
+@_db_option
+def service_install(name: str, source: Path | None, dry_run: bool,
+                    and_start: bool, db: Path | None) -> None:
+    """Install the service definition for this host.
+
+    The definition carries no secrets: the bot token lives in the project's
+    sqlite3 file, so set it with `lyo set adapter.<name>.token=...` first.
+    """
+    from lyo.service import ServiceError, supervisor
+
+    plan = _plan(name, db, source)
+    try:
+        boss = supervisor()
+    except ServiceError as exc:
+        if not dry_run:
+            raise click.ClickException(str(exc)) from exc
+        click.secho(str(exc), fg="yellow")
+        click.echo()
+        from lyo.service import Systemd
+
+        click.echo(Systemd().definition(plan))
+        return
+
+    if dry_run:
+        click.secho(f"{boss.kind} at {boss.unit_path(plan)}:", bold=True)
+        click.echo()
+        click.echo(boss.definition(plan))
+        return
+
+    _warn_about_env(plan)
+    _report(boss.install(plan))
+    click.echo(f"  {boss.hint(plan)}")
+    if and_start:
+        _report(boss.start(plan))
+
+
+def _warn_about_env(plan) -> None:
+    """A token given by environment variable will not reach the service."""
+    import os
+
+    leaked = [k for k in os.environ if k.startswith("LYO_") and k != "LYO_DB"]
+    if leaked:
+        click.secho(
+            f"note: {', '.join(sorted(leaked))} is set in your shell but will "
+            f"not reach the service. Put it in configuration instead: "
+            f"`lyo set adapter.discord.token=...` then `lyo commit`.",
+            fg="yellow")
+
+
+@service.command("uninstall")
+@_name_option
+@_db_option
+def service_uninstall(name: str, db: Path | None) -> None:
+    """Stop the service and remove its definition."""
+    boss = _supervisor()
+    _report(boss.uninstall(_plan(name, db, None)))
+
+
+@service.command("start")
+@_name_option
+@_db_option
+def service_start(name: str, db: Path | None) -> None:
+    """Start the service."""
+    _report(_supervisor().start(_plan(name, db, None)))
+
+
+@service.command("stop")
+@_name_option
+@_db_option
+def service_stop(name: str, db: Path | None) -> None:
+    """Stop the service."""
+    _report(_supervisor().stop(_plan(name, db, None)))
+
+
+@service.command("restart")
+@_name_option
+@_db_option
+def service_restart(name: str, db: Path | None) -> None:
+    """Restart the service. For configuration changes, prefer `lyo reload`."""
+    _report(_supervisor().restart(_plan(name, db, None)))
+
+
+@service.command("status")
+@_name_option
+@_db_option
+def service_status(name: str, db: Path | None) -> None:
+    """Report what the host's service manager thinks, and what the instance says."""
+    from lyo.control import ControlError, request
+
+    boss = _supervisor()
+    plan = _plan(name, db, None)
+    state = boss.status(plan)
+
+    click.secho(f"{plan.unit_name}: ", bold=True, nl=False)
+    click.secho(state.message, fg="green" if state.ok else "yellow")
+    click.echo(f"  {boss.kind}")
+    running = boss.current_command(plan)
+    click.echo(f"  installed  {'yes, ' + str(boss.unit_path(plan)) if running else 'no'}")
+    #  Show what is installed, which may differ from what this plan would write.
+    click.echo(f"  command    {running or plan.command() + '   (would run)'}")
+
+    try:
+        reply = request("status", **_control_args(db))
+    except (ControlError, click.ClickException) as exc:
+        click.echo(f"  instance   not reachable ({exc})")
+        return
+    click.echo(f"  instance   {reply['world']}, pid {reply['pid']}, "
+               f"up {reply['uptime']}s, {reply['characters']} character(s)")

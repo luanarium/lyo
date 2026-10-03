@@ -131,6 +131,13 @@ async def serve(service: Service, *, db: Path, host: str | None = None,
         with contextlib.suppress(NotImplementedError, AttributeError):
             loop.add_signal_handler(number, task.cancel)
 
+    #  SIGHUP means reload, as it does for every other daemon, so
+    #  `systemctl --user reload` and `lyo reload` do the same thing.
+    hangup = getattr(signal, "SIGHUP", None)
+    if hangup is not None:
+        with contextlib.suppress(NotImplementedError, AttributeError):
+            loop.add_signal_handler(hangup, _on_hangup, service)
+
     try:
         async with server:
             await server.serve_forever()
@@ -138,6 +145,16 @@ async def serve(service: Service, *, db: Path, host: str | None = None,
         if not host and UNIX_AVAILABLE:
             socket_path(db).unlink(missing_ok=True)
         service.store.db.execute("DELETE FROM meta WHERE key = 'control_port'")
+
+
+def _on_hangup(service: Service) -> None:
+    reply = service.reload()
+    if reply.get("ok"):
+        print(f"reloaded {reply['reloaded']}")
+    else:
+        print(f"reload refused: {reply.get('error')}")
+        for line in reply.get("diagnostics", []):
+            print(f"  {line}")
 
 
 def _handler(service: Service, token: str | None):
@@ -193,7 +210,9 @@ def request(operation: str, *, db: Path, host: str | None = None,
         else:
             path = socket_path(db)
             if not path.exists():
-                raise ControlError(f"nothing listening on {path}")
+                #  Absolute, because a service runs from elsewhere and a
+                #  relative path in the message would point at nothing.
+                raise ControlError(f"nothing listening on {path.absolute()}")
             connection = socket.socket(socket.AF_UNIX)
             connection.settimeout(timeout)
             try:
@@ -201,8 +220,8 @@ def request(operation: str, *, db: Path, host: str | None = None,
             except ConnectionRefusedError as exc:
                 connection.close()
                 raise ControlError(
-                    f"a stale socket at {path} -- the instance is not running"
-                ) from exc
+                    f"a stale socket at {path.absolute()} -- "
+                    f"the instance is not running") from exc
     except (OSError, ControlError) as exc:
         raise ControlError(
             f"no running instance to talk to ({exc}). Start one with `lyo run`."
