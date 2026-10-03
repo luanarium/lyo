@@ -41,7 +41,8 @@ _PLACEHOLDERS = {
     "stock", "share", "remainder", "drops",
 }
 
-_BUILTIN_HANDLERS = {"use", "kill", "enter", "attack", "cast", "equip", "buy"}
+_BUILTIN_HANDLERS = {"use", "kill", "enter", "attack", "cast", "equip",
+                     "buy", "timeout"}
 
 
 @dataclass(frozen=True)

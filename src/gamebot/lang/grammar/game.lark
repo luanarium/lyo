@@ -135,7 +135,7 @@ each_stmt: "for" "every" selector ":" _NL _INDENT stmt+ _DEDENT
 selector: qualifier* NAME ["here"]
 !qualifier: "living" | "other" | "fallen"
 
-ask_stmt: "ask" NAME ":" STRING? _NL _INDENT ask_opt+ _DEDENT
+ask_stmt: "ask" NAME ":" [STRING] _NL _INDENT ask_opt+ _DEDENT
 ask_opt: "accepts" accept_spec _NL                           -> accepts
        | "offers" "every" NAME "by" name_list _NL            -> offers
        | "times" "out" "after" quantity _NL                  -> timeout

@@ -20,8 +20,9 @@ discord = [
     "discord-py>=2.7",
 ]
 
-# Bot adapters register under the "gamebot.adapters" entry-point group.
-# The discord target is declared once the adapter exists.
+# Bot adapters are pluggy plugins under the "gamebot" entry-point group.
+[project.entry-points.gamebot]
+discord = "gamebot.adapters.discord"
 
 [build-system]
 requires = ["uv_build>=0.12.8,<0.13.0"]

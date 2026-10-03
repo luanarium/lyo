@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from gamebot import __version__
+from gamebot import plugins
 from gamebot.cartridge import png as cartridge
 from gamebot.cartridge.markdown import tangle as tangle_markdown
 from gamebot.lang.check import Report, check, sources_in
@@ -154,3 +155,92 @@ def unpack(cart: Path, output: Path | None) -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# --------------------------------------------------------------- adapters
+
+@main.command()
+def adapters() -> None:
+    """List the bot adapters this installation can run."""
+    found = plugins.adapters()
+    if not found:
+        click.echo("No adapters installed.")
+        return
+    for name, adapter in sorted(found.items()):
+        click.secho(name, bold=True, nl=False)
+        click.echo(f" -- {adapter.summary}")
+        for setting in adapter.settings:
+            note = " (required)" if setting.required else (
+                f" [{setting.default}]" if setting.default else "")
+            click.echo(f"    {name}.{setting.key}{note} -- {setting.help}")
+
+
+# -------------------------------------------------------------------- run
+
+@main.command()
+@click.argument("source", default="world/kairos.md",
+                type=click.Path(exists=True, path_type=Path))
+@click.option("--adapter", "-a", default="discord", show_default=True,
+              help="Which bot adapter to run.")
+@click.option("--set", "-s", "overrides", multiple=True, metavar="KEY=VALUE",
+              help="A setting, in UCI shape: -s discord.token=...")
+@click.option("--check", is_flag=True,
+              help="Validate the source and the settings, then stop.")
+def run(source: Path, adapter: str, overrides: tuple[str, ...],
+        check: bool) -> None:
+    """Serve a game to a chat platform.
+
+    Settings may also come from the environment, as GAMEBOT_<ADAPTER>_<KEY>.
+    """
+    from gamebot.engine import Engine
+    from gamebot.lang.check import check as check_source
+
+    report = check_source(source)
+    if not report.ok:
+        for diagnostic in report.errors:
+            _show(report, diagnostic)
+        raise click.ClickException(f"{source} does not resolve")
+
+    found = plugins.adapters()
+    chosen = found.get(adapter)
+    if chosen is None:
+        known = ", ".join(sorted(found)) or "none"
+        raise click.ClickException(f"no adapter called {adapter!r} (have: {known})")
+
+    values = _settings(chosen, overrides)
+    missing = [s.key for s in chosen.settings if s.required and not values.get(s.key)]
+    if missing:
+        hints = ", ".join(f"-s {adapter}.{key}=..." for key in missing)
+        raise click.ClickException(f"{adapter} needs: {hints}")
+
+    world = report.world
+    click.secho(f"{world.title or source.name}", bold=True, nl=False)
+    click.echo(f" -- {len(world.locations)} locations, {len(world.verbs)} verbs, "
+               f"serving over {adapter}")
+    if check:
+        click.secho("checks passed; not connecting", fg="green")
+        return
+
+    engine = Engine(world)
+    chosen.run(engine, values, str(source))
+
+
+def _settings(adapter, overrides: tuple[str, ...]) -> dict[str, str]:
+    import os
+
+    values: dict[str, str] = {}
+    for setting in adapter.settings:
+        if setting.default is not None:
+            values[setting.key] = setting.default
+        env = os.environ.get(
+            f"GAMEBOT_{adapter.name}_{setting.key}".upper())
+        if env:
+            values[setting.key] = env
+
+    for pair in overrides:
+        key, _, value = pair.partition("=")
+        key = key.strip()
+        if key.startswith(f"{adapter.name}."):
+            key = key[len(adapter.name) + 1:]
+        values[key] = value.strip()
+    return {k: v for k, v in values.items() if v}

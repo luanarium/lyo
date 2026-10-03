@@ -10,13 +10,14 @@ from lark import Token, Tree
 
 from gamebot.engine import views
 from gamebot.engine.bind import Unbound, bind
+from gamebot.engine.flows import Conversation, Prompt, Step
 from gamebot.engine.evaluate import LanguageError, Scope, evaluate
 from gamebot.engine.execute import Refused, Stopped, run_body
 from gamebot.engine.state import Duel, Monster, Offer, Player, Sim
 from gamebot.engine.turn import Message, Turn, render
 from gamebot.lang.model import Item, Spell, Verb, World
 
-__all__ = ["Engine", "Outcome", "Message"]
+__all__ = ["Engine", "Outcome", "Message", "Prompt", "Step"]
 
 
 @dataclass
@@ -41,6 +42,17 @@ class Engine:
         self.world = world
         self.sim = Sim(world=world, rng=random.Random(seed), now=now)
         self._vocabulary = self._index()
+        self._talking: dict[str, Conversation] = {}
+
+    def reload(self, world: World) -> None:
+        """Swap in a revalidated world, keeping the players who are logged in."""
+        players = self.sim.players
+        now = self.sim.now
+        self.world = world
+        self.sim = Sim(world=world, rng=self.sim.rng, now=now)
+        self.sim.players = players
+        self._vocabulary = self._index()
+        self._talking.clear()
 
     # ------------------------------------------------------------ clock
 
@@ -76,7 +88,8 @@ class Engine:
 
     # ---------------------------------------------------------- registration
 
-    def register(self, user_id: str, name: str, char_class: str) -> Outcome:
+    def register(self, user_id: str, name: str, char_class: str,
+                 *, announce: bool = True) -> Outcome:
         """Create a character. The `register` flow drives this once it runs."""
         if user_id in self.sim.players:
             return Outcome([Message("You already have a character.", True)],
@@ -104,6 +117,8 @@ class Engine:
                 player.equipped[item.slot] = ref.name
                 player.take(ref.name, 1)
         self.sim.players[user_id] = player
+        if not announce:
+            return Outcome()
         return Outcome([Message(
             f"{name} the {char_class} begins in {player.location}.", True)])
 
@@ -118,6 +133,12 @@ class Engine:
         if holder is None:
             return Outcome(unknown=True)
 
+        if holder.name in self.world.flows:
+            return Outcome(unknown=False, refused=True,
+                           messages=[Message(
+                               f"`{holder.name}` is a conversation -- "
+                               f"start it with begin_flow.", True)])
+
         player = self.sim.players.get(user_id)
         if player is None:
             return Outcome([Message("Use register first.")], refused=True)
@@ -125,10 +146,6 @@ class Engine:
         self.sim.expire_offers()
         if holder.name in self.world.offers:
             return self._offer(holder, player, words[1:])
-        if holder.name in self.world.flows:
-            return Outcome([Message(
-                f"`{holder.name}` is a conversation; the adapter drives it.", True)],
-                refused=True)
         return self._verb(holder, player, words[1:])
 
     # ----------------------------------------------------------------- verbs
@@ -365,9 +382,67 @@ class Engine:
             return getattr(player, name)
         return player.stats.get(name, 0)
 
+    # ----------------------------------------------------------------- flows
+
+    def flow_named(self, word: str) -> str | None:
+        """The flow a typed word starts, if it starts one."""
+        holder = self._vocabulary.get(word.casefold())
+        if holder is not None and holder.name in self.world.flows:
+            return holder.name
+        return None
+
+    def talking(self, user_id: str) -> bool:
+        return user_id in self._talking
+
+    def begin_flow(self, user_id: str, name: str) -> Step:
+        flow = self.world.flows.get(name)
+        if flow is None:
+            return Step(messages=[Message(f"No conversation called {name}.", True)],
+                        done=True, refused=True)
+
+        actor = self.sim.players.get(user_id) or self._stranger(user_id)
+        talk = Conversation(self, flow, actor, private=flow.visibility != "public")
+        step = talk.start()
+        self._settle(user_id, talk, step)
+        return step
+
+    def reply_flow(self, user_id: str, text: str) -> Step:
+        talk = self._talking.get(user_id)
+        if talk is None:
+            return Step(done=True)
+        step = talk.reply(text)
+        self._settle(user_id, talk, step)
+        return step
+
+    def abandon_flow(self, user_id: str) -> Step:
+        talk = self._talking.pop(user_id, None)
+        if talk is None:
+            return Step(done=True)
+        return talk.abandon()
+
+    def _settle(self, user_id: str, talk: Conversation, step: Step) -> None:
+        """Keep the conversation if it is still asking; finish it otherwise."""
+        if step.prompt is not None:
+            self._talking[user_id] = talk
+            return
+        self._talking.pop(user_id, None)
+        if step.registered:
+            name, char_class = step.registered
+            #  The flow says its own line; do not announce it twice.
+            created = self.register(user_id, name, char_class, announce=False)
+            step.messages = [m for m in step.messages] + created.messages
+            step.refused = step.refused or created.refused
+
+    def _stranger(self, user_id: str) -> Player:
+        """A stand-in for someone with no character yet, so `register` can run."""
+        return Player(user_id=user_id, name="", char_class="",
+                      location=self.world.start_at.name, hp=1, max_hp=1,
+                      mp=0, max_mp=0)
+
     # ----------------------------------------------------------------- views
 
     def _render_view(self, turn: Turn) -> None:
         name = turn.values.get("view")
         if name:
-            turn.say(views.render(name, self.sim, turn.actor), turn.private)
+            turn.say(views.render(name, self.sim, turn.actor), turn.private,
+                     kind=name)

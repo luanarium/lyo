@@ -1,1 +1,255 @@
-"""discord.py bot adapter."""
+"""The discord.py adapter.
+
+discord.py is imported lazily inside `run`, so this module is importable --
+and discoverable as a plugin -- whether or not the `discord` extra is
+installed. Nothing in the engine imports this package.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import re
+from dataclasses import dataclass
+
+from gamebot.engine import Engine, Message
+from gamebot.plugins import Adapter, Setting, hookimpl
+
+SETTINGS = (
+    Setting("token", "Discord bot token.", required=True, secret=True),
+    Setting("prefix", "Command prefix.", default="!"),
+    Setting("owner", "Discord user id allowed to run owner commands."),
+    Setting("notice_seconds", "How long the 'check your DMs' note lives.",
+            default="3"),
+)
+
+#  Presentation lives on this side of the boundary, not in the game.
+EMOJI = {
+    "refusal": "⛔", "location": "\U0001f9ed", "map": "\U0001f5fa",
+    "inventory": "\U0001f392", "roster": "\U0001f465", "help": "❓",
+    "stock": "\U0001f3ea",
+}
+_NUMBER = re.compile(r"(?<![\w*])(\d+)(?![\w*])")
+
+
+@hookimpl
+def gamebot_adapter() -> Adapter:
+    return Adapter(
+        name="discord",
+        summary="Play in Discord channels and DMs via discord.py.",
+        run=run,
+        settings=SETTINGS,
+    )
+
+
+@hookimpl
+def gamebot_present(text: str, kind: str | None, private: bool) -> str:
+    """Bold the numbers and prefix a line with an emoji, per the brief."""
+    styled = _NUMBER.sub(r"**\1**", text)
+    badge = EMOJI.get(kind or "")
+    if badge:
+        return f"{badge} {styled}"
+    return styled
+
+
+@dataclass
+class Settings:
+    token: str
+    prefix: str = "!"
+    owner: str | None = None
+    notice_seconds: float = 3.0
+
+    @classmethod
+    def from_mapping(cls, values: dict[str, str]) -> "Settings":
+        return cls(
+            token=values["token"],
+            prefix=values.get("prefix") or "!",
+            owner=values.get("owner") or None,
+            notice_seconds=float(values.get("notice_seconds") or 3),
+        )
+
+
+def run(engine: Engine, values: dict[str, str], source: str | None = None) -> None:
+    """Connect to Discord and serve the engine until interrupted."""
+    import discord  # noqa: PLC0415 - deliberately lazy
+
+    settings = Settings.from_mapping(values)
+    intents = discord.Intents.default()
+    intents.message_content = True
+    intents.dm_messages = True
+    client = discord.Client(intents=intents)
+    bot = Bot(engine, client, settings, discord, source)
+
+    @client.event
+    async def on_ready() -> None:
+        print(f"connected as {client.user} -- serving {engine.world.title!r}")
+
+    @client.event
+    async def on_message(message) -> None:
+        if message.author.bot:
+            return
+        await bot.handle(message)
+
+    client.run(settings.token)
+
+
+class Bot:
+    """Maps Discord messages onto engine commands, and back again."""
+
+    def __init__(self, engine: Engine, client, settings: Settings, discord,
+                 source: str | None) -> None:
+        self.engine = engine
+        self.client = client
+        self.settings = settings
+        self.discord = discord
+        self.source = source
+        self._busy: set[int] = set()
+
+    # ------------------------------------------------------------- inbound
+
+    async def handle(self, message) -> None:
+        uid = str(message.author.id)
+        private = message.guild is None
+
+        #  A DM from someone mid-conversation is an answer, not a command.
+        if private and message.author.id in self._busy:
+            return
+
+        text = message.content.strip()
+        if not text.startswith(self.settings.prefix):
+            return
+        text = text[len(self.settings.prefix):].strip()
+        if not text:
+            return
+
+        word = text.split()[0].casefold()
+        if word in ("reload", "restart"):
+            await self._reload(message)
+            return
+
+        flow = self.engine.flow_named(word)
+        if flow is not None:
+            await self._converse(message, flow)
+            return
+
+        outcome = self.engine.command(uid, self._resolve_mentions(message, text))
+        if outcome.unknown:
+            return
+        await self._deliver(message, outcome.messages)
+
+    def _resolve_mentions(self, message, text: str) -> str:
+        """Turn <@123> into a bare id, and a lone @name into that user's id."""
+        for user in message.mentions:
+            text = re.sub(rf"<@!?{user.id}>", str(user.id), text)
+        return text
+
+    # ------------------------------------------------------------ outbound
+
+    async def _deliver(self, message, messages: list[Message]) -> None:
+        public = [m for m in messages if not m.private]
+        private = [m for m in messages if m.private]
+
+        for item in public:
+            await message.channel.send(self._style(item))
+
+        if not private:
+            return
+        sent = await self._dm(message.author, private)
+        if sent:
+            if message.guild is not None:
+                await message.channel.send(
+                    f"{message.author.mention} check your DMs.",
+                    delete_after=self.settings.notice_seconds)
+            return
+        #  DMs are closed: fall back to the channel rather than losing the reply.
+        for item in private:
+            await message.channel.send(self._style(item))
+
+    async def _dm(self, user, messages: list[Message]) -> bool:
+        try:
+            channel = user.dm_channel or await user.create_dm()
+            for item in messages:
+                await channel.send(self._style(item))
+        except self.discord.Forbidden:
+            return False
+        return True
+
+    def _style(self, message: Message) -> str:
+        return gamebot_present(message.text, message.kind, message.private)
+
+    # --------------------------------------------------------- conversations
+
+    async def _converse(self, message, flow: str) -> None:
+        user, uid = message.author, str(message.author.id)
+        if user.id in self._busy:
+            return
+        self._busy.add(user.id)
+        try:
+            await self._run_flow(message, flow, user, uid)
+        finally:
+            self._busy.discard(user.id)
+
+    async def _run_flow(self, message, flow: str, user, uid: str) -> None:
+        try:
+            channel = user.dm_channel or await user.create_dm()
+        except self.discord.Forbidden:
+            await message.channel.send(
+                f"{user.mention} I cannot DM you. "
+                f"Open your DMs, or use `{self.settings.prefix}buy <item>`.")
+            return
+
+        if message.guild is not None:
+            await message.channel.send(
+                f"{user.mention} check your DMs.",
+                delete_after=self.settings.notice_seconds)
+
+        step = self.engine.begin_flow(uid, flow)
+        while True:
+            for item in step.messages:
+                target = channel if item.private else message.channel
+                await target.send(self._style(item))
+            if step.prompt is None:
+                return
+
+            await channel.send(self._style(
+                Message(step.prompt.rendered(), True)))
+
+            def is_answer(reply) -> bool:
+                return (reply.author.id == user.id
+                        and reply.guild is None
+                        and not reply.author.bot)
+
+            try:
+                reply = await self.client.wait_for(
+                    "message", check=is_answer, timeout=step.prompt.timeout)
+            except asyncio.TimeoutError:
+                step = self.engine.abandon_flow(uid)
+                for item in step.messages:
+                    target = channel if item.private else message.channel
+                    await target.send(self._style(item))
+                return
+            step = self.engine.reply_flow(uid, reply.content)
+
+    # --------------------------------------------------------------- owner
+
+    async def _reload(self, message) -> None:
+        """Validate before restarting, and refuse with the errors shown."""
+        owner = self.settings.owner
+        if not owner or str(message.author.id) != owner:
+            return
+        if not self.source:
+            await message.channel.send("No source to reload from.")
+            return
+
+        from gamebot.lang.check import check
+
+        report = check(self.source)
+        if not report.ok:
+            lines = "\n".join(
+                d.format(report.source) if report.source else d.message
+                for d in report.errors[:10])
+            await message.channel.send(
+                f"Refusing to reload -- {len(report.errors)} error(s):\n```\n{lines}\n```")
+            return
+
+        self.engine.reload(report.world)
+        await message.channel.send("Back online.")

@@ -14,6 +14,8 @@ from gamebot.lang.model import Item, Location, Spell
 class Message:
     text: str
     private: bool = False
+    kind: str | None = None
+    """A hint for presentation: a view's name, or "refusal"."""
 
 
 @dataclass
@@ -41,13 +43,14 @@ class Turn:
     def refused(self) -> bool:
         return self.refusal is not None
 
-    def say(self, text: str, private: bool | None = None) -> None:
+    def say(self, text: str, private: bool | None = None,
+            kind: str | None = None) -> None:
         self.messages.append(
-            Message(text, self.private if private is None else private))
+            Message(text, self.private if private is None else private, kind))
 
     def refuse(self, text: str) -> None:
         self.refusal = text
-        self.messages.append(Message(text, self.private))
+        self.messages.append(Message(text, self.private, "refusal"))
 
 
 _PLACEHOLDER = re.compile(r"\{([a-zA-Z_][a-zA-Z_0-9.]*)\}")

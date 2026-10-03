@@ -488,15 +488,18 @@ flow register:
     times out after 120 seconds
   create player named name as chosen
   say "{name} the {chosen} begins in {start}."
+  on timeout:
+    say "Registration timed out or failed." publicly
 
 flow shop:
   private
   refuse "There is no shop here." unless here.shop
   show stock
   loop:
-    ask choice:
+    ask choice: "Name an item to buy, or say done."
       accepts "done", "exit", "leave", "cancel", "quit" to stop
       accepts any item in stock to buy it
+      reprompts forever
       times out after 120 seconds
 ```
 
