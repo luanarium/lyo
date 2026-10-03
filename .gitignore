@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+# runtime state: player saves and live simulation
+var/
+
+# sqlite sidecars
+*.db-wal
+*.db-shm
