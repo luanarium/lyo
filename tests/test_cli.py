@@ -4,7 +4,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from gamebot.cli import main
+from lyo.cli import main
 
 WORLD = Path(__file__).parent.parent / "world"
 KAIROS = WORLD / "kairos.md"
@@ -65,7 +65,7 @@ def test_pack_and_unpack_round_trip(tmp_path):
 
 
 def test_unpack_explains_a_plain_png(tmp_path):
-    from gamebot.cartridge.png import blank
+    from lyo.cartridge.png import blank
 
     plain = tmp_path / "plain.png"
     plain.write_bytes(blank())
@@ -100,13 +100,13 @@ def test_state_reports_when_there_is_no_file(tmp_path):
 
 
 def test_state_saves_and_shows(tmp_path):
-    db = tmp_path / "gamebot.db"
+    db = tmp_path / "lyo.db"
     assert run("state", "Store landed; UCI next.", "--db", db).exit_code == 0
     assert "Store landed; UCI next." in run("state", "--db", db).output
 
 
 def test_state_shows_a_history(tmp_path):
-    db = tmp_path / "gamebot.db"
+    db = tmp_path / "lyo.db"
     for note in ("one", "two", "three"):
         run("state", note, "--db", db)
     out = run("state", "--history", "2", "--db", db).output
@@ -120,10 +120,10 @@ def test_there_is_no_log_or_discard_command():
 
 
 def test_run_check_with_a_store(tmp_path):
-    db = tmp_path / "gamebot.db"
-    from gamebot.engine import Engine
-    from gamebot.lang.check import check as check_source
-    from gamebot.store import Store
+    db = tmp_path / "lyo.db"
+    from lyo.engine import Engine
+    from lyo.lang.check import check as check_source
+    from lyo.store import Store
 
     with Store(db) as store:
         Engine(check_source(KAIROS).world, store=store).register(
@@ -137,7 +137,7 @@ def test_run_check_with_a_store(tmp_path):
 # ----------------------------------------------------------- config (UCI)
 
 def test_set_stages_and_commit_applies(tmp_path):
-    db = tmp_path / "gamebot.db"
+    db = tmp_path / "lyo.db"
     out = run("set", "adapter.discord.token=abc", "--db", db).output
     assert "~ adapter.discord.token='abc'" in out
     assert "1 staged" in out
@@ -149,13 +149,13 @@ def test_set_stages_and_commit_applies(tmp_path):
 
 
 def test_get_an_unset_option_fails(tmp_path):
-    db = tmp_path / "gamebot.db"
+    db = tmp_path / "lyo.db"
     result = run("get", "adapter.discord.token", "--db", db)
     assert result.exit_code != 0 and "is not set" in result.output
 
 
 def test_a_malformed_path_is_explained(tmp_path):
-    db = tmp_path / "gamebot.db"
+    db = tmp_path / "lyo.db"
     result = run("get", "discord.token", "--db", db)
     assert result.exit_code != 0
     assert "package.section.option" in result.output
@@ -176,7 +176,7 @@ def test_show_output_can_be_piped_back_into_set(tmp_path):
 
 
 def test_revert_and_delete(tmp_path):
-    db = tmp_path / "gamebot.db"
+    db = tmp_path / "lyo.db"
     run("set", "adapter.discord.prefix=!", "--db", db)
     run("commit", "--db", db)
 
@@ -191,13 +191,13 @@ def test_revert_and_delete(tmp_path):
 
 
 def test_run_reads_committed_configuration(tmp_path):
-    db = tmp_path / "gamebot.db"
+    db = tmp_path / "lyo.db"
     run("set", f"game.main.source={KAIROS}", "--db", db)
     run("set", "adapter.discord.token=abc", "--db", db)
 
     staged = run("run", "--check", "--db", db)
     assert staged.exit_code != 0, "staged settings are not live"
-    assert "gamebot commit" in staged.output
+    assert "lyo commit" in staged.output
 
     run("commit", "--db", db)
     committed = run("run", "--check", "--db", db)
@@ -206,7 +206,7 @@ def test_run_reads_committed_configuration(tmp_path):
 
 
 def test_a_flag_overrides_configuration(tmp_path):
-    db = tmp_path / "gamebot.db"
+    db = tmp_path / "lyo.db"
     run("set", "adapter.main.name=nosuchadapter", "--db", db)
     run("commit", "--db", db)
     assert "no adapter called" in run("run", KAIROS, "--check", "--db", db).output
@@ -217,4 +217,4 @@ def test_a_flag_overrides_configuration(tmp_path):
 def test_adapters_advertises_uci_paths():
     out = run("adapters").output
     assert "adapter.discord.token" in out
-    assert "gamebot set adapter.<name>.<key>=<value>" in out
+    assert "lyo set adapter.<name>.<key>=<value>" in out

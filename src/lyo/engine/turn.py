@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from gamebot.engine.state import Monster, Player
-from gamebot.lang.model import Item, Location, Spell
+from lyo.engine.state import Monster, Player
+from lyo.lang.model import Item, Location, Spell
 
 
 @dataclass

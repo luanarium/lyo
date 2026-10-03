@@ -13,4 +13,4 @@ var/
 dist/
 
 # the project sqlite3 file: local state, not versioned
-gamebot.db
+lyo.db

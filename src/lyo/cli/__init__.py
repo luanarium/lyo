@@ -7,20 +7,20 @@ from pathlib import Path
 
 import click
 
-from gamebot import __version__
-from gamebot import plugins
-from gamebot.cartridge import png as cartridge
-from gamebot.cartridge.markdown import tangle as tangle_markdown
-from gamebot.lang.check import Report, check, sources_in
-from gamebot.lang.resolve import ERROR, WARNING, Diagnostic
+from lyo import __version__
+from lyo import plugins
+from lyo.cartridge import png as cartridge
+from lyo.cartridge.markdown import tangle as tangle_markdown
+from lyo.lang.check import Report, check, sources_in
+from lyo.lang.resolve import ERROR, WARNING, Diagnostic
 
 _SEVERITY = {ERROR: {"fg": "red", "bold": True}, WARNING: {"fg": "yellow"}}
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(__version__, "-V", "--version", prog_name="gamebot")
+@click.version_option(__version__, "-V", "--version", prog_name="lyo")
 def main() -> None:
-    """A game engine for chatbot games."""
+    """lyo Engine -- a game engine for chatbot games."""
 
 
 # --------------------------------------------------------------- lint
@@ -174,8 +174,8 @@ def adapters() -> None:
                 f" [{setting.default}]" if setting.default else "")
             click.echo(f"    adapter.{name}.{setting.key}{note} -- {setting.help}")
     click.echo()
-    click.echo("Set these with: gamebot set adapter.<name>.<key>=<value>, "
-               "then gamebot commit")
+    click.echo("Set these with: lyo set adapter.<name>.<key>=<value>, "
+               "then lyo commit")
 
 
 # -------------------------------------------------------------------- run
@@ -189,7 +189,7 @@ def adapters() -> None:
 @click.option("--set", "-s", "overrides", multiple=True, metavar="KEY=VALUE",
               help="A setting, in UCI shape: -s discord.token=...")
 @click.option("--db", type=click.Path(path_type=Path), default=None,
-              help="The project's sqlite3 file. Defaults to gamebot.db.")
+              help="The project's sqlite3 file. Defaults to lyo.db.")
 @click.option("--check", is_flag=True,
               help="Validate the source and the settings, then stop.")
 def run(source: Path | None, adapter: str | None, overrides: tuple[str, ...],
@@ -197,11 +197,11 @@ def run(source: Path | None, adapter: str | None, overrides: tuple[str, ...],
     """Serve a game to a chat platform.
 
     Source and adapter default to `game.main.source` and `adapter.main.name`.
-    Settings come from configuration, then GAMEBOT_<ADAPTER>_<KEY>, then -s.
+    Settings come from configuration, then LYO_<ADAPTER>_<KEY>, then -s.
     """
-    from gamebot.engine import Engine
-    from gamebot.lang.check import check as check_source
-    from gamebot.store import Store
+    from lyo.engine import Engine
+    from lyo.lang.check import check as check_source
+    from lyo.store import Store
 
     store = Store(_db_path(db))
     config = store.config
@@ -230,8 +230,8 @@ def run(source: Path | None, adapter: str | None, overrides: tuple[str, ...],
         hints = ", ".join(f"adapter.{adapter}.{key}" for key in missing)
         raise click.ClickException(
             f"{adapter} needs {hints}. Set it with "
-            f"`gamebot set adapter.{adapter}.{missing[0]}=...` then "
-            f"`gamebot commit`, or pass -s.")
+            f"`lyo set adapter.{adapter}.{missing[0]}=...` then "
+            f"`lyo commit`, or pass -s.")
 
     world = report.world
     click.secho(f"{world.title or source.name}", bold=True, nl=False)
@@ -266,7 +266,7 @@ def _settings(adapter, overrides: tuple[str, ...], config) -> dict[str, str]:
     values.update(config.live("adapter", adapter.name))
 
     for setting in adapter.settings:
-        env = os.environ.get(f"GAMEBOT_{adapter.name}_{setting.key}".upper())
+        env = os.environ.get(f"LYO_{adapter.name}_{setting.key}".upper())
         if env:
             values[setting.key] = env
 
@@ -286,14 +286,14 @@ def _settings(adapter, overrides: tuple[str, ...], config) -> dict[str, str]:
 def _db_path(given: "Path | None") -> "Path":
     import os
 
-    from gamebot.store import DEFAULT_PATH
+    from lyo.store import DEFAULT_PATH
 
-    return given or Path(os.environ.get("GAMEBOT_DB") or DEFAULT_PATH)
+    return given or Path(os.environ.get("LYO_DB") or DEFAULT_PATH)
 
 
 _db_option = click.option(
     "--db", type=click.Path(path_type=Path), default=None,
-    help="The project's sqlite3 file. Defaults to gamebot.db, or $GAMEBOT_DB.")
+    help="The project's sqlite3 file. Defaults to lyo.db, or $LYO_DB.")
 
 
 # ----------------------------------------------------------------- state
@@ -309,7 +309,7 @@ def state(summary: str | None, history: int | None, db: Path | None) -> None:
     One brief paragraph per session. Git is the record of what changed and why;
     this is the digest on top of it.
     """
-    from gamebot.store import Store
+    from lyo.store import Store
 
     path = _db_path(db)
     if summary is None and not path.exists():
@@ -339,7 +339,7 @@ def state(summary: str | None, history: int | None, db: Path | None) -> None:
 # adapter.<name>.<key> for whatever an adapter declares.
 
 def _config(db: "Path | None"):
-    from gamebot.store import Store
+    from lyo.store import Store
 
     return Store(_db_path(db))
 
@@ -353,7 +353,7 @@ def _bad_path(exc: Exception) -> "click.ClickException":
 @_db_option
 def get_option(path: str, db: Path | None) -> None:
     """Read one option's live value."""
-    from gamebot.store.config import BadPath
+    from lyo.store.config import BadPath
 
     with _config(db) as store:
         try:
@@ -371,9 +371,9 @@ def get_option(path: str, db: Path | None) -> None:
 def set_option(assignments: tuple[str, ...], db: Path | None) -> None:
     """Stage one or more options. Takes `-` to read assignments from stdin.
 
-    Nothing takes effect until `gamebot commit`.
+    Nothing takes effect until `lyo commit`.
     """
-    from gamebot.store.config import BadPath, split_assignment
+    from lyo.store.config import BadPath, split_assignment
 
     lines: list[str] = []
     for given in assignments:
@@ -396,7 +396,7 @@ def set_option(assignments: tuple[str, ...], db: Path | None) -> None:
                 raise _bad_path(exc) from exc
             click.echo(option.show())
             staged += 1
-    click.secho(f"{staged} staged -- run `gamebot commit` to apply", fg="yellow")
+    click.secho(f"{staged} staged -- run `lyo commit` to apply", fg="yellow")
 
 
 @main.command("show")
@@ -404,7 +404,7 @@ def set_option(assignments: tuple[str, ...], db: Path | None) -> None:
 @_db_option
 def show_options(prefix: str | None, db: Path | None) -> None:
     """Print configuration. A leading ~ is a staged value, - a staged removal."""
-    from gamebot.store.config import BadPath
+    from lyo.store.config import BadPath
 
     with _config(db) as store:
         try:
@@ -424,7 +424,7 @@ def show_options(prefix: str | None, db: Path | None) -> None:
 @_db_option
 def delete_option(path: str, db: Path | None) -> None:
     """Stage the removal of one option."""
-    from gamebot.store.config import BadPath
+    from lyo.store.config import BadPath
 
     with _config(db) as store:
         try:
@@ -433,7 +433,7 @@ def delete_option(path: str, db: Path | None) -> None:
             raise _bad_path(exc) from exc
     if not existed:
         raise click.ClickException(f"{path} is not set")
-    click.secho(f"{path} staged for removal -- run `gamebot commit`", fg="yellow")
+    click.secho(f"{path} staged for removal -- run `lyo commit`", fg="yellow")
 
 
 @main.command("changes")

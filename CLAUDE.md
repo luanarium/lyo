@@ -2,7 +2,7 @@
 
 ## Project
 
-A game engine for chatbot games
+lyo Engine — a game engine for chatbot games.
 
 ## Core Conventions
 

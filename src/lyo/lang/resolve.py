@@ -14,11 +14,11 @@ from difflib import get_close_matches
 
 from lark import Token, Tree
 
-from gamebot.lang.model import (
+from lyo.lang.model import (
     CharClass, Drop, Exit, Flow, Item, Location, Monster, Offer, Ref, Rules,
     Shop, Slot, Spell, Track, Verb, World,
 )
-from gamebot.lang.source import Source
+from lyo.lang.source import Source
 
 ERROR = "error"
 WARNING = "warning"

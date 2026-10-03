@@ -8,10 +8,10 @@ from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 
-from gamebot.engine.state import Duel, Player, Sim
+from lyo.engine.state import Duel, Player, Sim
 
 SCHEMA_VERSION = "4"
-DEFAULT_PATH = Path("gamebot.db")
+DEFAULT_PATH = Path("lyo.db")
 
 
 def now() -> str:
@@ -48,7 +48,7 @@ class Store:
         self.close()
 
     def _migrate(self) -> None:
-        sql = (files("gamebot.store") / "schema.sql").read_text(encoding="utf-8")
+        sql = (files("lyo.store") / "schema.sql").read_text(encoding="utf-8")
         self.db.executescript(sql)
         self._migrate_legacy()
         self.db.execute(
@@ -85,7 +85,7 @@ class Store:
 
     @property
     def config(self) -> "Config":
-        from gamebot.store.config import Config
+        from lyo.store.config import Config
 
         return Config(self.db)
 

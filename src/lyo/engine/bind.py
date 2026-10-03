@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from gamebot.engine.state import Player, Sim
-from gamebot.lang.model import Item, Slot, Spell
+from lyo.engine.state import Player, Sim
+from lyo.lang.model import Item, Slot, Spell
 
 _DIRECTIONS = {"n": "north", "s": "south", "e": "east", "w": "west",
                "u": "up", "d": "down"}

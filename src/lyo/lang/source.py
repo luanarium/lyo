@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from gamebot.cartridge import png as png_mod
-from gamebot.cartridge.markdown import tangle
+from lyo.cartridge import png as png_mod
+from lyo.cartridge.markdown import tangle
 
 
 @dataclass(frozen=True)

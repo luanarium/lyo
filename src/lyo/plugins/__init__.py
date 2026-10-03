@@ -1,7 +1,7 @@
 """The bot-API boundary: pluggy hook specifications and adapter discovery.
 
-An adapter is an ordinary Python package that implements `gamebot_adapter` and
-advertises itself under the `gamebot` entry-point group. The engine never
+An adapter is an ordinary Python package that implements `lyo_adapter` and
+advertises itself under the `lyo` entry-point group. The engine never
 imports one, so the core stays free of any bot library.
 """
 
@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 import pluggy
 
-HOOK = "gamebot"
+HOOK = "lyo"
 hookspec = pluggy.HookspecMarker(HOOK)
 hookimpl = pluggy.HookimplMarker(HOOK)
 
@@ -42,11 +42,11 @@ class Specs:
     """The hooks an adapter may implement."""
 
     @hookspec
-    def gamebot_adapter(self) -> Adapter | None:
+    def lyo_adapter(self) -> Adapter | None:
         """Return this plugin's adapter, or None if it provides none."""
 
     @hookspec(firstresult=True)
-    def gamebot_present(self, text: str, kind: str | None, private: bool) -> str | None:
+    def lyo_present(self, text: str, kind: str | None, private: bool) -> str | None:
         """Restyle one outgoing message. The first plugin to answer wins."""
 
 
@@ -58,18 +58,18 @@ def manager() -> pluggy.PluginManager:
 
     #  Register the first-party adapter if its dependency is installed.
     try:
-        from gamebot.adapters import discord as discord_adapter
+        from lyo.adapters import discord as discord_adapter
     except ImportError:  # pragma: no cover - only without the extra
         discord_adapter = None
     if discord_adapter is not None and not pm.is_registered(discord_adapter):
-        pm.register(discord_adapter, name="gamebot.adapters.discord")
+        pm.register(discord_adapter, name="lyo.adapters.discord")
     return pm
 
 
 def adapters(pm: pluggy.PluginManager | None = None) -> dict[str, Adapter]:
     pm = pm or manager()
     found: dict[str, Adapter] = {}
-    for adapter in pm.hook.gamebot_adapter():
+    for adapter in pm.hook.lyo_adapter():
         if adapter is not None:
             found[adapter.name] = adapter
     return found
@@ -77,5 +77,5 @@ def adapters(pm: pluggy.PluginManager | None = None) -> dict[str, Adapter]:
 
 def present(pm: pluggy.PluginManager, text: str, kind: str | None,
             private: bool) -> str:
-    styled = pm.hook.gamebot_present(text=text, kind=kind, private=private)
+    styled = pm.hook.lyo_present(text=text, kind=kind, private=private)
     return styled if isinstance(styled, str) else text

@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from gamebot.lang.model import World
+from lyo.lang.model import World
 
 
 @dataclass

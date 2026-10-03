@@ -8,14 +8,14 @@ from typing import Any
 
 from lark import Token, Tree
 
-from gamebot.engine import views
-from gamebot.engine.bind import Unbound, bind
-from gamebot.engine.flows import Conversation, Prompt, Step
-from gamebot.engine.evaluate import LanguageError, Scope, evaluate
-from gamebot.engine.execute import Refused, Stopped, run_body
-from gamebot.engine.state import Duel, Monster, Offer, Player, Sim
-from gamebot.engine.turn import Message, Turn, render
-from gamebot.lang.model import Item, Spell, Verb, World
+from lyo.engine import views
+from lyo.engine.bind import Unbound, bind
+from lyo.engine.flows import Conversation, Prompt, Step
+from lyo.engine.evaluate import LanguageError, Scope, evaluate
+from lyo.engine.execute import Refused, Stopped, run_body
+from lyo.engine.state import Duel, Monster, Offer, Player, Sim
+from lyo.engine.turn import Message, Turn, render
+from lyo.lang.model import Item, Spell, Verb, World
 
 __all__ = ["Engine", "Outcome", "Message", "Prompt", "Step"]
 

@@ -1,5 +1,5 @@
 [project]
-name = "gamebot"
+name = "lyo"
 version = "0.1.0"
 description = "A game engine for chatbot games"
 authors = [
@@ -13,16 +13,16 @@ dependencies = [
 ]
 
 [project.scripts]
-gamebot = "gamebot.cli:main"
+lyo = "lyo.cli:main"
 
 [project.optional-dependencies]
 discord = [
     "discord-py>=2.7",
 ]
 
-# Bot adapters are pluggy plugins under the "gamebot" entry-point group.
-[project.entry-points.gamebot]
-discord = "gamebot.adapters.discord"
+# Bot adapters are pluggy plugins under the "lyo" entry-point group.
+[project.entry-points.lyo]
+discord = "lyo.adapters.discord"
 
 [build-system]
 requires = ["uv_build>=0.12.8,<0.13.0"]

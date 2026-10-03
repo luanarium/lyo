@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 from lark.exceptions import UnexpectedInput
 
-from gamebot.cartridge import png as png_mod
-from gamebot.cartridge.markdown import tangle
-from gamebot.lang.parser import parse
-from gamebot.lang.source import load
+from lyo.cartridge import png as png_mod
+from lyo.cartridge.markdown import tangle
+from lyo.lang.parser import parse
+from lyo.lang.source import load
 
 FIXTURES = Path(__file__).parent / "fixtures"
 DECLARATIONS = (

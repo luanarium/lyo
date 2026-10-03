@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-from gamebot.lang.check import check
-from gamebot.lang.parser import parse
-from gamebot.lang.resolve import ERROR, WARNING, resolve
-from gamebot.lang.source import Source
+from lyo.lang.check import check
+from lyo.lang.parser import parse
+from lyo.lang.resolve import ERROR, WARNING, resolve
+from lyo.lang.source import Source
 
 WORLD = Path(__file__).parent.parent / "world"
 

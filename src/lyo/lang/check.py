@@ -7,11 +7,11 @@ from pathlib import Path
 
 from lark.exceptions import UnexpectedInput
 
-from gamebot.cartridge.png import CartridgeError
-from gamebot.lang.model import World
-from gamebot.lang.parser import parse
-from gamebot.lang.resolve import ERROR, Diagnostic, resolve
-from gamebot.lang.source import Source, load
+from lyo.cartridge.png import CartridgeError
+from lyo.lang.model import World
+from lyo.lang.parser import parse
+from lyo.lang.resolve import ERROR, Diagnostic, resolve
+from lyo.lang.source import Source, load
 
 SUFFIXES = (".md", ".markdown", ".game", ".png")
 

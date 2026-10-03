@@ -11,8 +11,8 @@ import asyncio
 import re
 from dataclasses import dataclass
 
-from gamebot.engine import Engine, Message
-from gamebot.plugins import Adapter, Setting, hookimpl
+from lyo.engine import Engine, Message
+from lyo.plugins import Adapter, Setting, hookimpl
 
 SETTINGS = (
     Setting("token", "Discord bot token.", required=True, secret=True),
@@ -32,7 +32,7 @@ _NUMBER = re.compile(r"(?<![\w*])(\d+)(?![\w*])")
 
 
 @hookimpl
-def gamebot_adapter() -> Adapter:
+def lyo_adapter() -> Adapter:
     return Adapter(
         name="discord",
         summary="Play in Discord channels and DMs via discord.py.",
@@ -42,7 +42,7 @@ def gamebot_adapter() -> Adapter:
 
 
 @hookimpl
-def gamebot_present(text: str, kind: str | None, private: bool) -> str:
+def lyo_present(text: str, kind: str | None, private: bool) -> str:
     """Bold the numbers and prefix a line with an emoji, per the brief."""
     styled = _NUMBER.sub(r"**\1**", text)
     badge = EMOJI.get(kind or "")
@@ -180,7 +180,7 @@ class Bot:
         return True
 
     def _style(self, message: Message) -> str:
-        return gamebot_present(message.text, message.kind, message.private)
+        return lyo_present(message.text, message.kind, message.private)
 
     def _schedule(self, coroutine) -> None:
         task = asyncio.ensure_future(coroutine)
@@ -261,7 +261,7 @@ class Bot:
             await message.channel.send("No source to reload from.")
             return
 
-        from gamebot.lang.check import check
+        from lyo.lang.check import check
 
         report = check(self.source)
         if not report.ok:

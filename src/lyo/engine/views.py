@@ -6,8 +6,8 @@ is playable without one.
 
 from __future__ import annotations
 
-from gamebot.engine.evaluate import Scope, evaluate
-from gamebot.engine.state import Player, Sim
+from lyo.engine.evaluate import Scope, evaluate
+from lyo.engine.state import Player, Sim
 
 
 def render(name: str, sim: Sim, actor: Player) -> str:

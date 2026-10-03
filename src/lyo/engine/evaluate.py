@@ -12,7 +12,7 @@ from typing import Any
 
 from lark import Token, Tree
 
-from gamebot.engine.state import Monster, Player, Sim
+from lyo.engine.state import Monster, Player, Sim
 
 
 class LanguageError(Exception):
@@ -338,7 +338,7 @@ def _attribute(value: Any, part: str, scope: Scope) -> Any:
     if value is None:
         return 0
 
-    from gamebot.lang.model import Item, Location, Spell
+    from lyo.lang.model import Item, Location, Spell
 
     if isinstance(value, Item):
         if part == "scales":

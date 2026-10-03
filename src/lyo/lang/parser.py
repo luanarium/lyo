@@ -26,7 +26,7 @@ class GameIndenter(Indenter):
 
 
 def grammar_text() -> str:
-    return (files("gamebot.lang.grammar") / "game.lark").read_text(encoding="utf-8")
+    return (files("lyo.lang.grammar") / "game.lark").read_text(encoding="utf-8")
 
 
 @lru_cache(maxsize=1)

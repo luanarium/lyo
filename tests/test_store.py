@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from gamebot.engine import Engine
-from gamebot.lang.check import check
-from gamebot.lang.model import slug
-from gamebot.store import Store
+from lyo.engine import Engine
+from lyo.lang.check import check
+from lyo.lang.model import slug
+from lyo.store import Store
 
 WORLD = Path(__file__).parent.parent / "world" / "kairos.md"
 
@@ -21,7 +21,7 @@ def world():
 
 @pytest.fixture
 def db(tmp_path):
-    with Store(tmp_path / "gamebot.db") as store:
+    with Store(tmp_path / "lyo.db") as store:
         yield store
 
 
@@ -68,7 +68,7 @@ def test_colliding_ids_are_an_error(tmp_path):
 # -------------------------------------------------------------- round trip
 
 def test_a_character_survives_a_restart(world, tmp_path):
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         first = Engine(world, seed=7, store=store)
         first.register("u1", "Brynn", "Warrior")
@@ -91,7 +91,7 @@ def test_a_character_survives_a_restart(world, tmp_path):
 
 
 def test_partial_track_progress_is_not_lost(world, tmp_path):
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         engine = Engine(world, seed=7, store=store)
         engine.register("u1", "Brynn", "Warrior")
@@ -106,7 +106,7 @@ def test_partial_track_progress_is_not_lost(world, tmp_path):
 
 def test_wounded_monsters_and_contributors_survive_a_restart(world, tmp_path):
     """The original lost this on every restart; keeping it is deliberate."""
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         engine = Engine(world, seed=7, store=store)
         engine.register("u1", "Brynn", "Warrior")
@@ -122,7 +122,7 @@ def test_wounded_monsters_and_contributors_survive_a_restart(world, tmp_path):
 
 def test_a_duel_survives_a_restart_but_a_challenge_does_not(world, tmp_path):
     """A duel is ongoing; a sixty-second challenge is stale by definition."""
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         engine = Engine(world, seed=7, store=store)
         engine.register("u1", "Brynn", "Warrior")
@@ -145,7 +145,7 @@ def test_a_duel_survives_a_restart_but_a_challenge_does_not(world, tmp_path):
 
 def test_renaming_an_item_keeps_the_save_when_the_id_is_pinned(world, tmp_path):
     """The hazard the brief warns about, made harmless by a stable id."""
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         engine = Engine(world, seed=7, store=store)
         engine.register("u1", "Brynn", "Warrior")
@@ -169,7 +169,7 @@ def test_renaming_an_item_keeps_the_save_when_the_id_is_pinned(world, tmp_path):
 
 
 def test_a_save_naming_something_gone_is_reported_not_crashed(world, tmp_path):
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         engine = Engine(world, seed=7, store=store)
         engine.register("u1", "Brynn", "Warrior")
@@ -251,7 +251,7 @@ def test_an_older_file_is_migrated(tmp_path):
 
 
 def test_opening_an_existing_file_is_safe(tmp_path):
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         store.save_state("first")
     with Store(path) as store:
@@ -287,7 +287,7 @@ def test_a_schema_two_file_drops_offers_and_the_counted_clock(tmp_path):
 
 def test_created_at_is_written_once_and_never_restated(world, tmp_path):
     """The fragility the upsert removes: a rebuild resets what it omits."""
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         engine = Engine(world, seed=7, store=store)
         engine.register("u1", "Brynn", "Warrior")
@@ -305,7 +305,7 @@ def test_created_at_is_written_once_and_never_restated(world, tmp_path):
 
 def test_a_column_the_save_does_not_know_about_survives(world, tmp_path):
     """A later migration can add a column without the save clearing it."""
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         engine = Engine(world, seed=7, store=store)
         engine.register("u1", "Brynn", "Warrior")
@@ -318,7 +318,7 @@ def test_a_column_the_save_does_not_know_about_survives(world, tmp_path):
 
 
 def test_a_departed_player_is_pruned(world, tmp_path):
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         engine = Engine(world, seed=7, store=store)
         engine.register("u1", "Brynn", "Warrior")
@@ -334,7 +334,7 @@ def test_a_departed_player_is_pruned(world, tmp_path):
 
 
 def test_a_consumed_item_leaves_no_row(world, tmp_path):
-    path = tmp_path / "gamebot.db"
+    path = tmp_path / "lyo.db"
     with Store(path) as store:
         engine = Engine(world, seed=7, store=store)
         engine.register("u1", "Brynn", "Warrior")

@@ -2,13 +2,13 @@
 
 import pytest
 
-from gamebot.store import Store
-from gamebot.store.config import BadPath, parse, split_assignment
+from lyo.store import Store
+from lyo.store.config import BadPath, parse, split_assignment
 
 
 @pytest.fixture
 def config(tmp_path):
-    with Store(tmp_path / "gamebot.db") as store:
+    with Store(tmp_path / "lyo.db") as store:
         yield store.config
 
 

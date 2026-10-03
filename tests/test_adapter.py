@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from gamebot.adapters.discord import Bot, Settings, gamebot_adapter, gamebot_present
-from gamebot.engine import Engine
-from gamebot.lang.check import check
-from gamebot.plugins import adapters, manager
+from lyo.adapters.discord import Bot, Settings, lyo_adapter, lyo_present
+from lyo.engine import Engine
+from lyo.lang.check import check
+from lyo.plugins import adapters, manager
 
 WORLD = Path(__file__).parent.parent / "world" / "kairos.md"
 
@@ -115,14 +115,14 @@ def test_the_adapter_is_discoverable_as_a_plugin():
 
 
 def test_the_adapter_declares_its_settings_in_uci_shape():
-    keys = [s.key for s in gamebot_adapter().settings]
+    keys = [s.key for s in lyo_adapter().settings]
     assert keys == ["token", "prefix", "owner", "notice_seconds"]
-    assert gamebot_adapter().settings[0].required
+    assert lyo_adapter().settings[0].required
 
 
 def test_presentation_bolds_numbers_and_badges_a_view():
-    assert gamebot_present("hits for 8", None, False) == "hits for **8**"
-    styled = gamebot_present("Carrying nothing.", "inventory", True)
+    assert lyo_present("hits for 8", None, False) == "hits for **8**"
+    styled = lyo_present("Carrying nothing.", "inventory", True)
     assert styled.startswith("\U0001f392")
 
 

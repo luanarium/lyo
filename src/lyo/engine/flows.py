@@ -12,10 +12,10 @@ from typing import Any
 
 from lark import Token, Tree
 
-from gamebot.engine.evaluate import LanguageError, Scope
-from gamebot.engine.execute import Refused, Stopped, _unwrap, execute
-from gamebot.engine.turn import Message, Turn
-from gamebot.lang.model import Flow, Item
+from lyo.engine.evaluate import LanguageError, Scope
+from lyo.engine.execute import Refused, Stopped, _unwrap, execute
+from lyo.engine.turn import Message, Turn
+from lyo.lang.model import Flow, Item
 
 
 @dataclass
@@ -124,7 +124,7 @@ class Conversation:
     def _render_view(self) -> None:
         name = self.turn.values.pop("view", None)
         if name:
-            from gamebot.engine import views
+            from lyo.engine import views
             self.turn.say(views.render(name, self.engine.sim, self.turn.actor),
                           self.turn.private, kind=name)
 

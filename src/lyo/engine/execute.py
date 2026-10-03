@@ -11,10 +11,10 @@ from typing import Any
 
 from lark import Token, Tree
 
-from gamebot.engine.evaluate import LanguageError, Scope, evaluate, truth, _select
-from gamebot.engine.state import Monster, Player, Sim
-from gamebot.engine.turn import Turn, render
-from gamebot.lang.model import Item, Spell
+from lyo.engine.evaluate import LanguageError, Scope, evaluate, truth, _select
+from lyo.engine.state import Monster, Player, Sim
+from lyo.engine.turn import Turn, render
+from lyo.lang.model import Item, Spell
 
 
 class Refused(Exception):

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from gamebot.engine import Engine
-from gamebot.lang.check import check
+from lyo.engine import Engine
+from lyo.lang.check import check
 
 WORLD = Path(__file__).parent.parent / "world" / "kairos.md"
 

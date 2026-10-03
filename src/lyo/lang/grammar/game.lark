@@ -1,4 +1,4 @@
-// The gamebot game language.
+// The lyo game language.
 //
 // LALR(1), indentation-delimited. Thirteen top-level declarations. Keywords
 // are literal strings, so they outrank NAME in the contextual lexer; every
