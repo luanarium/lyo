@@ -120,7 +120,8 @@ def test_wounded_monsters_and_contributors_survive_a_restart(world, tmp_path):
         assert wolf.contributors == ["u1"]
 
 
-def test_a_duel_and_a_challenge_survive_a_restart(world, tmp_path):
+def test_a_duel_survives_a_restart_but_a_challenge_does_not(world, tmp_path):
+    """A duel is ongoing; a sixty-second challenge is stale by definition."""
     path = tmp_path / "gamebot.db"
     with Store(path) as store:
         engine = Engine(world, seed=7, store=store)
@@ -132,13 +133,14 @@ def test_a_duel_and_a_challenge_survive_a_restart(world, tmp_path):
         engine.command("u3", "duel @u1")
         engine.command("u1", "duel @u2")
         engine.command("u2", "accept")
+        assert len(engine.sim.offers) == 1
 
     with Store(path) as store:
         engine = Engine(world, store=store)
         duel = engine.sim.duel_of("u1")
         assert duel is not None and duel.other("u1") == "u2"
         assert duel.turn == "u1"
-        assert len(engine.sim.offers) == 1
+        assert engine.sim.offers == []
 
 
 def test_renaming_an_item_keeps_the_save_when_the_id_is_pinned(world, tmp_path):
@@ -217,8 +219,8 @@ def test_play_is_not_logged(world, db):
     assert "log" not in tables
 
 
-def test_a_schema_one_file_is_migrated(tmp_path):
-    """An older file kept event and discard streams. Only session survives."""
+def test_an_older_file_is_migrated(tmp_path):
+    """Schema 1 kept event and discard streams; only session state survives."""
     path = tmp_path / "old.db"
     import sqlite3
 
@@ -245,7 +247,7 @@ def test_a_schema_one_file_is_migrated(tmp_path):
         assert "log" not in tables
         version = store.db.execute(
             "SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
-        assert version["value"] == "2"
+        assert version["value"] == "3"
 
 
 def test_opening_an_existing_file_is_safe(tmp_path):
@@ -255,3 +257,27 @@ def test_opening_an_existing_file_is_safe(tmp_path):
     with Store(path) as store:
         store.save_state("second")
         assert len(store.state(5)) == 2
+
+
+def test_a_schema_two_file_drops_offers_and_the_counted_clock(tmp_path):
+    path = tmp_path / "old.db"
+    import sqlite3
+
+    old = sqlite3.connect(path)
+    old.executescript("""
+        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO meta (key, value) VALUES ('clock', '1234.5');
+        CREATE TABLE offer (
+            kind TEXT NOT NULL, challenger TEXT NOT NULL, target TEXT NOT NULL,
+            expires_at REAL NOT NULL, PRIMARY KEY (kind, challenger, target));
+        INSERT INTO offer VALUES ('duel', 'u1', 'u2', 60.0);
+    """)
+    old.commit()
+    old.close()
+
+    with Store(path) as store:
+        tables = {row["name"] for row in store.db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")}
+        assert "offer" not in tables
+        assert store.db.execute(
+            "SELECT 1 FROM meta WHERE key = 'clock'").fetchone() is None

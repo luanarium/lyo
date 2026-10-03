@@ -8,6 +8,8 @@ finds it wounded.
 from __future__ import annotations
 
 import random
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from gamebot.lang.model import World
@@ -99,7 +101,15 @@ class Sim:
     duels: list[Duel] = field(default_factory=list)
     offers: list[Offer] = field(default_factory=list)
     rng: random.Random = field(default_factory=random.Random)
-    now: float = 0.0
+    clock: Callable[[], float] = time.monotonic
+    """Reads real elapsed time. Monotonic, so an NTP step cannot rewind a
+    challenge's deadline."""
+    offset: float = 0.0
+    """Added to the clock, so a test can move time without sleeping."""
+
+    @property
+    def now(self) -> float:
+        return self.clock() + self.offset
 
     def __post_init__(self) -> None:
         for name, location in self.world.locations.items():

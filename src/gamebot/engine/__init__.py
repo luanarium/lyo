@@ -25,6 +25,11 @@ class Outcome:
     messages: list[Message] = field(default_factory=list)
     refused: bool = False
     unknown: bool = False
+    expires_in: float | None = None
+    """Seconds until a challenge this command made lapses, if it made one.
+
+    The adapter owns the waiting, exactly as it does for a flow's prompts.
+    """
 
     @property
     def text(self) -> str:
@@ -38,9 +43,10 @@ class Engine:
     """Drives one world for many players."""
 
     def __init__(self, world: World, *, seed: int | None = None,
-                 now: float = 0.0, store: Any = None) -> None:
+                 clock: Any = None, store: Any = None) -> None:
         self.world = world
-        self.sim = Sim(world=world, rng=random.Random(seed), now=now)
+        self.sim = Sim(world=world, rng=random.Random(seed),
+                       **({"clock": clock} if clock else {}))
         self.store = store
         self._vocabulary = self._index()
         self._talking: dict[str, Conversation] = {}
@@ -49,12 +55,18 @@ class Engine:
             self.restored = store.load(self.sim)
 
     def reload(self, world: World) -> None:
-        """Swap in a revalidated world, keeping the players who are logged in."""
-        players = self.sim.players
-        now = self.sim.now
+        """Swap in a revalidated world, keeping the players who are logged in.
+
+        Duels come across too, since the players in them do. Pending
+        challenges do not: they are measured in seconds, and the world they
+        were made in has just changed underneath them.
+        """
+        previous = self.sim
         self.world = world
-        self.sim = Sim(world=world, rng=self.sim.rng, now=now)
-        self.sim.players = players
+        self.sim = Sim(world=world, rng=previous.rng, clock=previous.clock,
+                       offset=previous.offset)
+        self.sim.players = previous.players
+        self.sim.duels = previous.duels
         self._vocabulary = self._index()
         self._talking.clear()
         self._persist()
@@ -69,14 +81,20 @@ class Engine:
     # ------------------------------------------------------------ clock
 
     def advance(self, seconds: float) -> list[Message]:
-        """Move the clock, expiring anything that was waiting."""
-        self.sim.now += seconds
+        """Move time forward without sleeping. For tests; play uses the clock."""
+        self.sim.offset += seconds
+        return self.expire_offers()
+
+    def expire_offers(self) -> list[Message]:
+        """Drop any challenge past its deadline, and say so."""
         notices = []
         for offer in self.sim.expire_offers():
             declared = self.world.offers.get(offer.kind)
             text = (self._expiry_text(declared)
                     or f"The {offer.kind} challenge expired.")
             notices.append(Message(text))
+        if notices:
+            self._persist()
         return notices
 
     @staticmethod
@@ -261,7 +279,8 @@ class Engine:
         self._persist()
         return Outcome([Message(
             f"{player.name} challenges {target.name} to a {declared.name}. "
-            f"{target.name} has {seconds} seconds to accept or decline.")])
+            f"{target.name} has {seconds} seconds to accept or decline.")],
+            expires_in=float(seconds))
 
     @staticmethod
     def _requirements(declared) -> list[Tree]:

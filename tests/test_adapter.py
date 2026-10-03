@@ -91,8 +91,8 @@ def world():
     return report.world
 
 
-def make(world, replies=(), owner=None, dms_open=True):
-    engine = Engine(world, seed=7)
+def make(world, replies=(), owner=None, dms_open=True, clock=None):
+    engine = Engine(world, seed=7, clock=clock)
     client = Client(replies)
     settings = Settings(token="x", prefix="!", owner=owner, notice_seconds=3)
     bot = Bot(engine, client, settings, FakeDiscord(), str(WORLD))
@@ -260,3 +260,38 @@ def test_reload_keeps_players_and_reports_back_online(world):
     say(bot, user, channel, "!reload")
     assert any("Back online" in t for t in channel.texts)
     assert engine.sim.players["1"].gold == 42
+
+
+# ------------------------------------------------------- challenge expiry
+
+def test_a_challenge_lapses_with_a_notice_in_the_channel(world):
+    """The brief gives a challenge 60 seconds, and a notice when it passes."""
+    ticks = [1000.0]
+    engine, bot, user, channel = make(world, clock=lambda: ticks[0])
+    engine.register("1", "Brynn", "Warrior")
+    engine.register("2", "Selene", "Mage")
+
+    async def scenario():
+        await bot.handle(Msg(author=user, channel=channel,
+                             content="!duel <@2>", mentions=[User(2)]))
+        assert bot._waiting, "the adapter scheduled the lapse"
+        assert len(engine.sim.offers) == 1
+        ticks[0] += 61          # time passes
+        await bot._lapse(channel, 0)
+
+    asyncio.run(scenario())
+    assert any("expired" in t for t in channel.texts)
+    assert engine.sim.offers == []
+
+
+def test_a_challenge_accepted_in_time_still_works(world):
+    ticks = [1000.0]
+    engine, bot, user, channel = make(world, clock=lambda: ticks[0])
+    engine.register("1", "Brynn", "Warrior")
+    engine.register("2", "Selene", "Mage")
+
+    say(bot, user, channel, "!duel <@2>", mentions=[User(2)])
+    ticks[0] += 59
+    other, their_channel = User(2), Channel()
+    say(bot, other, their_channel, "!accept")
+    assert engine.sim.duel_of("1") is not None

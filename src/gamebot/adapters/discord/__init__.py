@@ -103,6 +103,7 @@ class Bot:
         self.discord = discord
         self.source = source
         self._busy: set[int] = set()
+        self._waiting: set = set()
 
     # ------------------------------------------------------------- inbound
 
@@ -135,6 +136,11 @@ class Bot:
         if outcome.unknown:
             return
         await self._deliver(message, outcome.messages)
+
+        #  A challenge lapses on its own. The adapter does the waiting, as it
+        #  does for a flow's prompts.
+        if outcome.expires_in:
+            self._schedule(self._lapse(message.channel, outcome.expires_in))
 
     def _resolve_mentions(self, message, text: str) -> str:
         """Turn <@123> into a bare id, and a lone @name into that user's id."""
@@ -175,6 +181,21 @@ class Bot:
 
     def _style(self, message: Message) -> str:
         return gamebot_present(message.text, message.kind, message.private)
+
+    def _schedule(self, coroutine) -> None:
+        task = asyncio.ensure_future(coroutine)
+        self._waiting.add(task)
+        task.add_done_callback(self._waiting.discard)
+
+    async def drain(self) -> None:
+        """Wait for anything scheduled. Used by tests."""
+        while self._waiting:
+            await asyncio.gather(*list(self._waiting), return_exceptions=True)
+
+    async def _lapse(self, channel, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+        for notice in self.engine.expire_offers():
+            await channel.send(self._style(notice))
 
     # --------------------------------------------------------- conversations
 

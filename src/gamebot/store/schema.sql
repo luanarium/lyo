@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS monster_contributor (
     PRIMARY KEY (location_id, monster_id, user_id)
 );
 
+-- A duel has no deadline, so it restores cleanly. A pending challenge does
+-- have one, and is deliberately not kept: sixty seconds does not survive a
+-- restart in any meaningful sense.
 CREATE TABLE IF NOT EXISTS duel (
     a    TEXT NOT NULL,
     b    TEXT NOT NULL,
@@ -83,13 +86,6 @@ CREATE TABLE IF NOT EXISTS duel (
     PRIMARY KEY (a, b)
 );
 
-CREATE TABLE IF NOT EXISTS offer (
-    kind       TEXT NOT NULL,
-    challenger TEXT NOT NULL,
-    target     TEXT NOT NULL,
-    expires_at REAL NOT NULL,
-    PRIMARY KEY (kind, challenger, target)
-);
 
 -- --------------------------------------------------- session state
 --

@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 
-from gamebot.engine.state import Duel, Offer, Player, Sim
+from gamebot.engine.state import Duel, Player, Sim
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 DEFAULT_PATH = Path("gamebot.db")
 
 
@@ -50,24 +50,30 @@ class Store:
     def _migrate(self) -> None:
         sql = (files("gamebot.store") / "schema.sql").read_text(encoding="utf-8")
         self.db.executescript(sql)
-        self._drop_old_logs()
+        self._migrate_legacy()
         self.db.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
             "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
             (SCHEMA_VERSION,))
 
-    def _drop_old_logs(self) -> None:
-        """Schema 1 kept event and discard streams. Git is that record."""
-        present = self.db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'log'"
-        ).fetchone()
-        if not present:
-            return
-        self.db.execute(
-            "INSERT INTO session_state (at, summary) "
-            "SELECT at, message FROM log WHERE channel = 'session' "
-            "ORDER BY id")
-        self.db.execute("DROP TABLE log")
+    def _migrate_legacy(self) -> None:
+        present = {row["name"] for row in self.db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+        #  Schema 1 kept event and discard streams. Git is that record.
+        if "log" in present:
+            self.db.execute(
+                "INSERT INTO session_state (at, summary) "
+                "SELECT at, message FROM log WHERE channel = 'session' "
+                "ORDER BY id")
+            self.db.execute("DROP TABLE log")
+
+        #  Schema 2 stored challenge deadlines and a counted clock. Both are
+        #  meaningless once the clock reads real elapsed time, and a
+        #  sixty-second challenge has no business surviving a restart.
+        if "offer" in present:
+            self.db.execute("DROP TABLE offer")
+        self.db.execute("DELETE FROM meta WHERE key = 'clock'")
 
     # ------------------------------------------------------- session state
 
@@ -127,17 +133,6 @@ class Store:
                     "INSERT INTO duel (a, b, turn) VALUES (?, ?, ?)",
                     (duel.a, duel.b, duel.turn))
 
-            self.db.execute("DELETE FROM offer")
-            for offer in sim.offers:
-                self.db.execute(
-                    "INSERT INTO offer (kind, challenger, target, expires_at) "
-                    "VALUES (?, ?, ?, ?)",
-                    (offer.kind, offer.challenger, offer.target, offer.expires_at))
-
-            self.db.execute(
-                "INSERT INTO meta (key, value) VALUES ('clock', ?) "
-                "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-                (str(sim.now),))
 
     def _save_player(self, player: Player, known: dict[str, str],
                      items: dict[str, str], locations: dict[str, str],
@@ -240,14 +235,8 @@ class Store:
         for row in self.db.execute("SELECT * FROM duel"):
             if row["a"] in sim.players and row["b"] in sim.players:
                 sim.duels.append(Duel(row["a"], row["b"], row["turn"]))
-        for row in self.db.execute("SELECT * FROM offer"):
-            sim.offers.append(Offer(row["kind"], row["challenger"],
-                                    row["target"], row["expires_at"]))
-
-        clock = self.db.execute(
-            "SELECT value FROM meta WHERE key = 'clock'").fetchone()
-        if clock is not None:
-            sim.now = float(clock["value"])
+        #  Pending challenges are deliberately not restored: they last sixty
+        #  seconds, so one that outlived a restart is already stale.
 
         return sorted(set(lost))
 
