@@ -1,0 +1,159 @@
+# The lyo language
+
+A game is a set of declarations. They may appear in any order — the document is
+the compilation unit, so a location may name a monster declared further down.
+Blocks are delimited by indentation, and `#` begins a comment.
+
+## Declarations
+
+12 of them — `game`, `location`, `monster`, `item`, `class`, `spell`, `track`, `verb`, `flow`, `offer`, `rules`, `shop` —
+plus `npc`, which appears only inside a `location`.
+
+```game
+game "Kairos":
+  players start at "Oakhaven Village" with 20 hp, 10 gold
+
+location "Whispering Woods":
+  "Ancient oaks crowd the path, their branches knitted overhead."
+  east to "The Ruined Keep"
+  spawns "Goblin Scout", "Dire Wolf"
+
+monster "Dire Wolf":
+  18 hp, 6 str, 6 agi, 1 int
+  drops 3 to 6 gold
+  drops "Wolf Pelt"
+  drops "Health Potion" 15% of the time
+```
+
+Exits are two-way unless marked `one way`, so each connection is declared once.
+
+### Items
+
+```game
+item "Iron Sword" is a weapon:
+  4 damage scaling str
+
+item "Fists" is the default weapon:
+  also known as "hands", "fist", "punch"
+  1 damage scaling str
+
+item "Health Potion" is consumable:
+  also known as "potion"
+  on use:
+    refuse "You are already at full health." when hp is max_hp
+    take 1 item from player
+    restore 8 hp
+```
+
+A refusal aborts the rest of the body, which is why a potion drunk at full
+health is not consumed.
+
+### Verbs
+
+A verb is a player-facing command. Its slots say what it takes; the engine
+resolves them, including the longest-trailing-match rule that lets
+`attack iron sword dire wolf` find the wolf and read the rest as the weapon.
+
+```game
+verb attack <weapon?> <monster>:
+  public
+  refuse "You have fallen." unless alive
+  deal atk at least 1 to monster
+  say "{player} hits {monster} for {dealt}."
+  then for every living monster here:
+    deal its str - def at least 1 to player
+  say "Retaliation from {retaliators}: {taken}." when taken > 0
+```
+
+`public` goes to the room, `private` by direct message. The adapter decides what
+that means for its platform.
+
+### Conversations and offers
+
+`flow` is a multi-turn conversation; `offer` is a timed challenge between two
+players. These are the chatbot-shaped primitives, and the reason an existing
+interactive-fiction library would not do.
+
+```game
+flow register:
+  private
+  refuse "You already have a character." when registered
+  ask name: "What is your character's name?"
+    accepts any text, trimmed
+    times out after 120 seconds
+  ask chosen: "Choose a class:"
+    offers every class by number, name
+    reprompts forever
+  create player named name as chosen
+
+offer duel from <player> to <player>:
+  requires both alive, both here
+  expires after 60 seconds, saying "The challenge expired."
+  accepted by verb accept
+  while active:
+    turn based, alternating
+    armor applies
+    no retaliation
+```
+
+### Rules
+
+Named formulas and event handlers, referenced everywhere else.
+
+```game
+rules:
+  define def as armor.def + shield.def + accessory.def
+  define atk as weapon.damage + weapon.scales / 2
+
+  on kill monster:
+    roll gold in monster.gold
+    split gold evenly among contributors, remainder to killer
+
+  on enter location:
+    respawn all monsters here unless any other player here
+```
+
+## Statements
+
+`buy`, `create_player`, `deal`, `equip`, `give`, `handler`, `heal`, `move`, `refuse`, `respawn`, `restore`, `roll`, `say`, `show`, `split`, `stop`, `take`, `trigger`, plus `for every <selector>:`
+and `loop:`.
+
+## Expressions
+
+Integer arithmetic throughout, with floor division — every formula in a game
+rounds down. `+ - * /`, comparisons (`is`, `is not`, `>`, `>=`, `<`, `<=`),
+`and` / `or` / `not`, and the postfix clamps `at least`, `at most` and
+`capped at`, which bind loosest so `its str - def at least 1` clamps the whole
+subtraction.
+
+Paths read live state: `hp`, `max_hp`, `gold`, a stat by name, `here.inn`,
+`weapon.damage`, `monster.gold`, `its str` inside a loop. `both alive` and
+`either dueling` quantify over the two sides of a duel.
+
+## Identity
+
+Every declaration has a stable `id`, defaulting to a slug of its name:
+
+```game
+item "Rusted Longsword" is a weapon:
+  id iron_sword
+```
+
+Saved characters refer to the id, never the display name, so renaming an item
+does not orphan the copies players hold. Lint rejects a collision.
+
+## Terms
+
+| Term        | Definition |
+| ----------- | ---------- |
+| declaration | A top-level definition: a location, item, verb and so on |
+| slot        | A verb argument, written `<monster>` or `<weapon?>` if optional |
+| clamp       | A postfix bound: `at least`, `at most`, `capped at` |
+| flow        | A multi-turn conversation, suspending at each `ask` |
+| offer       | A timed challenge from one player to another |
+| selector    | What `for every` iterates: `living monster here` |
+| slug        | A stable id derived from a display name: `dragons_heart` |
+| LALR(1)     | The parsing algorithm: one token of lookahead, no ambiguity |
+| lark        | The parsing library the grammar is written for |
+
+<!-- generated by lyo 0.1.0 from adc56dfa2440aeee -->

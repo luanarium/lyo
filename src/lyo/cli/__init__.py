@@ -738,3 +738,71 @@ def service_status(name: str, db: Path | None) -> None:
         return
     click.echo(f"  instance   {reply['world']}, pid {reply['pid']}, "
                f"up {reply['uptime']}s, {reply['characters']} character(s)")
+
+
+# --------------------------------------------------------------- the bundle
+
+@main.command()
+@click.option("--no-zip", "skip_zip", is_flag=True,
+              help="Generate documentation only.")
+@click.option("--force", is_flag=True,
+              help="Regenerate every document, stale or not.")
+@click.option("-o", "--output", type=click.Path(path_type=Path),
+              help="Where to write the archive. Defaults to dist/.")
+def bundle(skip_zip: bool, force: bool, output: Path | None) -> None:
+    """Generate any documentation not yet written or updated, then zip it up.
+
+    Documents are generated from the code they describe, so a brief cannot
+    quietly drift from what the software does. Each carries a stamp naming the
+    version and a hash of its inputs, which is how staleness is known.
+    """
+    from lyo.docs.pages import DOCUMENTS
+
+    root = Path.cwd()
+    written, kept = [], []
+    for document in DOCUMENTS:
+        if force or not document.current(root):
+            written.append(document.write(root).relative_to(root))
+        else:
+            kept.append(document.path)
+
+    for path in written:
+        click.secho(f"  wrote   {path}", fg="green")
+    for path in kept:
+        click.secho(f"  current {path}", fg="bright_black")
+    if not written:
+        click.echo("documentation is up to date")
+
+    if skip_zip:
+        return
+    archive = _zip(root, output)
+    click.secho(f"{archive}: {archive.stat().st_size:,} bytes", bold=True)
+
+
+def _zip(root: Path, output: Path | None) -> Path:
+    """Everything git tracks, plus whatever was just generated."""
+    import subprocess
+    import zipfile
+
+    from lyo import __version__
+
+    listed = subprocess.run(["git", "ls-files"], capture_output=True, text=True,
+                            cwd=root, check=False)
+    if listed.returncode != 0:
+        raise click.ClickException("not a git repository, so there is nothing "
+                                   "to bundle -- `--no-zip` still writes docs")
+
+    files = {line for line in listed.stdout.splitlines() if line}
+    from lyo.docs.pages import DOCUMENTS
+
+    files |= {d.path for d in DOCUMENTS if (root / d.path).exists()}
+
+    archive = output or root / "dist" / f"lyo-{__version__}.zip"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    stem = f"lyo-{__version__}"
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zipped:
+        for name in sorted(files):
+            source = root / name
+            if source.is_file():
+                zipped.write(source, f"{stem}/{name}")
+    return archive
