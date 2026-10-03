@@ -94,7 +94,9 @@ def world():
 def make(world, replies=(), owner=None, dms_open=True, clock=None):
     engine = Engine(world, seed=7, clock=clock)
     client = Client(replies)
-    settings = Settings(token="x", prefix="!", owner=owner, notice_seconds=3)
+    settings = Settings.from_mapping(
+        {"token": "x", "prefix": "!", "owner": owner or "",
+         "notice_seconds": "3"})
     bot = Bot(engine, client, settings, FakeDiscord(), str(WORLD))
     user = User(1, dms_open=dms_open)
     channel = Channel()

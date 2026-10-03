@@ -190,10 +190,12 @@ def adapters() -> None:
               help="A setting, in UCI shape: -s discord.token=...")
 @click.option("--db", type=click.Path(path_type=Path), default=None,
               help="The project's sqlite3 file. Defaults to lyo.db.")
+@click.option("--control/--no-control", default=True,
+              help="Listen on a local control channel for reload and status.")
 @click.option("--check", is_flag=True,
               help="Validate the source and the settings, then stop.")
 def run(source: Path | None, adapter: str | None, overrides: tuple[str, ...],
-        db: Path | None, check: bool) -> None:
+        db: Path | None, control: bool, check: bool) -> None:
     """Serve a game to a chat platform.
 
     Source and adapter default to `game.main.source` and `adapter.main.name`.
@@ -243,6 +245,8 @@ def run(source: Path | None, adapter: str | None, overrides: tuple[str, ...],
         return
 
     engine = Engine(world, store=store)
+    services = _control_services(engine, store, source, adapter, values,
+                                 _db_path(db)) if control else ()
     if engine.restored:
         click.secho("saved game refers to things this world no longer has:",
                     fg="yellow")
@@ -250,7 +254,7 @@ def run(source: Path | None, adapter: str | None, overrides: tuple[str, ...],
             click.echo(f"  {missing}")
     click.echo(f"{store.path}: {store.characters()} character(s) restored")
     try:
-        chosen.run(engine, values, str(source))
+        _invoke(chosen.run, engine, values, str(source), services)
     finally:
         store.save(engine.sim)
         store.close()
@@ -464,6 +468,13 @@ def commit_options(package: str | None, db: Path | None) -> None:
         click.echo(f"{option.path}={option.effective or ''}")
     click.secho(f"{len(applied)} committed", fg="green")
 
+    #  UCI commits to the store; telling the service is a separate step.
+    from lyo.control import listening
+
+    if listening(_db_path(db)):
+        click.secho("an instance is running -- `lyo reload` to apply",
+                    fg="yellow")
+
 
 @main.command("revert")
 @click.argument("package", required=False)
@@ -476,3 +487,103 @@ def revert_options(package: str | None, db: Path | None) -> None:
         click.echo("no staged changes")
         return
     click.secho(f"{len(dropped)} reverted", fg="green")
+
+
+def _control_services(engine, store, source: Path, adapter: str,
+                      values: dict, db: Path):
+    """The control channel, as a coroutine factory the adapter will run."""
+    from lyo import control
+
+    config = store.config
+    service = control.Service(engine=engine, store=store, source=source,
+                              adapter=adapter, settings=values)
+    host = config.committed("control.main.host")
+    port = int(config.committed("control.main.port") or 0)
+    token = config.committed("control.main.token")
+    return (lambda: control.serve(service, db=db, host=host, port=port,
+                                  token=token),)
+
+
+def _invoke(run, engine, values, source, services):
+    """Call an adapter's run, passing services only if it accepts them."""
+    import inspect
+
+    try:
+        parameters = inspect.signature(run).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+    if "services" in parameters:
+        run(engine, values, source, services=services)
+        return
+    if services:
+        click.secho(f"note: this adapter does not host background services, "
+                    f"so the control channel is not running", fg="yellow")
+    run(engine, values, source)
+
+
+# ------------------------------------------------------- the control channel
+
+def _control_args(db: Path | None):
+    from lyo.control import ControlError
+    from lyo.store import Store
+
+    path = _db_path(db)
+    if not path.exists():
+        #  No state file means nothing has ever run, let alone is running.
+        raise ControlError(
+            f"no state file at {path}, so nothing is running. "
+            f"Start one with `lyo run`.")
+    with Store(path) as store:
+        config = store.config
+        recorded = store.db.execute(
+            "SELECT value FROM meta WHERE key = 'control_port'").fetchone()
+        return {
+            "db": path,
+            "host": config.committed("control.main.host"),
+            "port": int(recorded["value"]) if recorded else
+                    int(config.committed("control.main.port") or 0) or None,
+            "token": config.committed("control.main.token"),
+        }
+
+
+@main.command()
+@_db_option
+def status(db: Path | None) -> None:
+    """Ask a running instance what it is doing."""
+    from lyo.control import ControlError, request
+
+    try:
+        reply = request("status", **_control_args(db))
+    except ControlError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not reply.get("ok"):
+        raise click.ClickException(reply.get("error", "refused"))
+
+    click.secho(reply["world"], bold=True, nl=False)
+    click.echo(f"  pid {reply['pid']}, up {reply['uptime']}s")
+    click.echo(f"  source     {reply['source']}")
+    click.echo(f"  world      {reply['locations']} locations, "
+               f"{reply['verbs']} verbs")
+    click.echo(f"  players    {reply['characters']} registered, "
+               f"{reply['duels']} duelling, {reply['offers']} challenged")
+
+
+@main.command()
+@_db_option
+def reload(db: Path | None) -> None:
+    """Apply committed configuration and world changes to a running instance."""
+    from lyo.control import ControlError, request
+
+    try:
+        reply = request("reload", **_control_args(db))
+    except ControlError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if not reply.get("ok"):
+        for line in reply.get("diagnostics", []):
+            click.echo(line)
+        raise click.ClickException(reply.get("error", "reload refused"))
+    warnings = reply.get("warnings") or 0
+    plural = "s" if warnings != 1 else ""
+    note = f", {warnings} warning{plural}" if warnings else ""
+    click.secho(f"reloaded {reply['reloaded']}{note}", fg="green")

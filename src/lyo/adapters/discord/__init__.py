@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from lyo.engine import Engine, Message
 from lyo.plugins import Adapter, Setting, hookimpl
@@ -53,23 +53,42 @@ def lyo_present(text: str, kind: str | None, private: bool) -> str:
 
 @dataclass
 class Settings:
-    token: str
-    prefix: str = "!"
-    owner: str | None = None
-    notice_seconds: float = 3.0
+    """A live view over the host's settings dict.
+
+    Reading through rather than snapshotting means a `lyo reload` that changes
+    `adapter.discord.prefix` takes effect without dropping the connection.
+    """
+
+    values: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, values: dict[str, str]) -> "Settings":
-        return cls(
-            token=values["token"],
-            prefix=values.get("prefix") or "!",
-            owner=values.get("owner") or None,
-            notice_seconds=float(values.get("notice_seconds") or 3),
-        )
+        return cls(values)
+
+    @property
+    def token(self) -> str:
+        return self.values.get("token", "")
+
+    @property
+    def prefix(self) -> str:
+        return self.values.get("prefix") or "!"
+
+    @property
+    def owner(self) -> str | None:
+        return self.values.get("owner") or None
+
+    @property
+    def notice_seconds(self) -> float:
+        return float(self.values.get("notice_seconds") or 3)
 
 
-def run(engine: Engine, values: dict[str, str], source: str | None = None) -> None:
-    """Connect to Discord and serve the engine until interrupted."""
+def run(engine: Engine, values: dict[str, str], source: str | None = None,
+        services: tuple = ()) -> None:
+    """Connect to Discord and serve the engine until interrupted.
+
+    `services` are coroutine factories the host wants running alongside, such
+    as the control channel. A failure in any of them takes the rest down.
+    """
     import discord  # noqa: PLC0415 - deliberately lazy
 
     settings = Settings.from_mapping(values)
@@ -89,7 +108,14 @@ def run(engine: Engine, values: dict[str, str], source: str | None = None) -> No
             return
         await bot.handle(message)
 
-    client.run(settings.token)
+    async def main() -> None:
+        async with client:
+            async with asyncio.TaskGroup() as group:
+                group.create_task(client.start(settings.token))
+                for factory in services:
+                    group.create_task(factory())
+
+    asyncio.run(main())
 
 
 class Bot:

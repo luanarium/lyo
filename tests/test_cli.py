@@ -218,3 +218,45 @@ def test_adapters_advertises_uci_paths():
     out = run("adapters").output
     assert "adapter.discord.token" in out
     assert "lyo set adapter.<name>.<key>=<value>" in out
+
+
+# ------------------------------------------------------- the control channel
+
+def test_status_without_a_state_file_says_so(tmp_path):
+    result = run("status", "--db", tmp_path / "missing.db")
+    assert result.exit_code != 0
+    assert "nothing is running" in result.output
+
+
+def test_reload_without_an_instance_says_so(tmp_path):
+    db = tmp_path / "lyo.db"
+    run("set", "adapter.discord.token=x", "--db", db)
+    run("commit", "--db", db)
+    result = run("reload", "--db", db)
+    assert result.exit_code != 0
+    assert "no running instance" in result.output
+
+
+def test_commit_does_not_mention_reloading_when_nothing_runs(tmp_path):
+    db = tmp_path / "lyo.db"
+    run("set", "adapter.discord.token=x", "--db", db)
+    out = run("commit", "--db", db).output
+    assert "committed" in out
+    assert "lyo reload" not in out
+
+
+def test_run_warns_when_an_adapter_cannot_host_the_control_channel(tmp_path):
+    """An older adapter whose run() takes no services still works."""
+    from lyo import plugins
+    from lyo.cli import _invoke
+
+    calls = []
+
+    def old_style(engine, values, source):
+        calls.append((engine, values, source))
+
+    import click.testing
+    runner = click.testing.CliRunner()
+    with runner.isolation() as streams:
+        _invoke(old_style, None, {}, "src", (lambda: None,))
+    assert calls, "the adapter was still invoked"

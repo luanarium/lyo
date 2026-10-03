@@ -47,7 +47,7 @@ lyo Engine — a game engine for chatbot games.
 ## Deployment
 
 - Simple, intuitive commands for running the app.
-- Servers bind to localhost only by default. Binding to all interfaces or a single named interface is an explicit, simple flag/convention.
+- If the app listens on a socket, it binds to localhost only by default. Binding to all interfaces or a single named interface is an explicit, simple flag/convention.
 - README opens with the most common usage examples, then expands to everything else.
 - Built-in mechanism to run and manage the app as a service.
 - Configuration is exposed to stdin/tty in the shape of OpenWrt's UCI (`package.section.option=value`; get/set/show/commit style).

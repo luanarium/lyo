@@ -14,3 +14,6 @@ dist/
 
 # the project sqlite3 file: local state, not versioned
 lyo.db
+
+# the control socket
+*.sock
