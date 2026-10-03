@@ -159,6 +159,7 @@ shields contribute defence and nothing else.
 
 ```game
 item "Fists" is the default weapon:
+  also known as "hands", "hand", "fist", "punch"
   1 damage scaling str
 
 item "Rusty Cleaver" is a weapon:
@@ -249,12 +250,14 @@ item "Health Potion" is consumable:
   also known as "potion"
   on use:
     refuse "You are already at full health." when hp is max_hp
+    take 1 item from player
     restore 8 hp
     say "{player} drinks a Health Potion and recovers {restored} health."
 
 item "Mana Potion" is consumable:
   on use:
     refuse "Your reserve is already full." when mp is max_mp
+    take 1 item from player
     restore 8 mp
     say "{player} drinks a Mana Potion and recovers {restored} magic."
 
@@ -357,7 +360,6 @@ rules:
   on kill monster:
     roll gold in monster.gold
     split gold evenly among contributors, remainder to killer
-    say "{monster} falls. {loot}"
 
   on enter location:
     respawn all monsters here unless any other player here
@@ -384,9 +386,11 @@ verb attack <weapon?> <monster>:
   public
   refuse "You have fallen. Drink a potion or walk to an inn." unless alive
   deal atk at least 1 to monster
+  say "{player} hits {monster} for {dealt}, leaving {monster} on {monster.hp}."
+  say "{monster} falls. Loot: {loot}" when monster.hp is 0 and not dueling
   then for every living monster here:
     deal its str - def at least 1 to player
-  say "{player} hits {monster} for {dealt}. {retaliators} answer for {taken}."
+  say "Retaliation from {retaliators}: {taken}. {player} is on {hp}." when taken > 0
 
 verb cast <spell?> <monster>:
   public
@@ -394,9 +398,11 @@ verb cast <spell?> <monster>:
   refuse "Not enough magic for that." when mp < spell.cost
   take spell.cost mp from player
   deal spell.damage at least 1 to monster
+  say "{player} casts {spell} at {monster} for {dealt}."
+  say "{monster} falls. Loot: {loot}" when monster.hp is 0 and not dueling
   then for every living monster here:
     deal its str - def at least 1 to player
-  say "{player} casts {spell} for {dealt}. {retaliators} answer for {taken}."
+  say "Retaliation from {retaliators}: {taken}. {player} is on {hp}." when taken > 0
 ```
 
 </details>
@@ -445,10 +451,8 @@ verb equip <item>:
 verb buy <item>:
   public
   refuse "There is no shop here." unless here.shop
-  refuse "You cannot afford that." when gold < item.cost
-  take item.cost gold from player
-  give 1 item to player
-  say "{player} buys {item}."
+  buy item
+  say "{player} buys {item} for {item.cost} gold."
 
 verb inventory:
   also known as "inv"
@@ -526,6 +530,7 @@ offer duel from <player> to <player>:
   expires after 60 seconds, saying "The challenge expired."
   accepted by verb accept
   declined by verb decline
+  forfeited by verb forfeit
   while active:
     turn based, alternating
     armor applies

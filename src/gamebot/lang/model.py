@@ -96,6 +96,7 @@ class CharClass(Decl):
 @dataclass
 class Spell(Decl):
     cost: dict[str, int] = field(default_factory=dict)
+    damage: Tree | None = None
     scales: str | None = None
     provokes: bool = False
     known_by: list[str] = field(default_factory=list)
@@ -107,6 +108,10 @@ class Track(Decl):
     amount: int = 0
     triggers: list[str] = field(default_factory=list)
     scaling: str | None = None
+    cost: Tree | None = None
+    """Expression for the cost of the next point, in uses."""
+    effect: tuple[str, int] | None = None
+    """A second thing the raise does, as in `raises max_hp by 2 and heals 2`."""
 
 
 @dataclass

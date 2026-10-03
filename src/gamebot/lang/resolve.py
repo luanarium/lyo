@@ -283,6 +283,7 @@ class _Resolver:
             if stmt.data == "costs":
                 spell.cost = {u: a for a, u, _ in _quantities(stmt)}
             elif stmt.data == "deals":
+                spell.damage = stmt.children[0]
                 tokens = [c for c in stmt.children if isinstance(c, Token)]
                 if len(tokens) > 1:
                     spell.scales = str(tokens[-1])
@@ -301,12 +302,18 @@ class _Resolver:
             if stmt.data == "advances":
                 trigger = stmt.children[0]
                 track.triggers.append(trigger.data)
-                scaling = [c for c in trigger.children if c is not None]
-                if scaling:
-                    track.scaling = str(scaling[-1])
+                #  on_attack is [with-what, scaling]; on_cast is [scaling].
+                scaling = trigger.children[-1] if trigger.children else None
+                if scaling is not None:
+                    track.scaling = str(scaling)
+            elif stmt.data == "cost":
+                track.cost = stmt.children[0]
             elif stmt.data == "raises":
                 track.raises = str(stmt.children[0])
                 track.amount = int(str(stmt.children[1]))
+                extra = stmt.children[2] if len(stmt.children) > 2 else None
+                if extra is not None:
+                    track.effect = (str(extra.children[0]), int(str(extra.children[1])))
         if self._claim("track", name, node):
             self.world.tracks[name] = track
 

@@ -109,7 +109,7 @@ sequenced: ["then"] (action | each_stmt | loop_stmt)
 
 visibility: VISIBILITY _NL
 
-guard: "refuse" STRING ("when" | "unless") expr _NL          -> refuse
+guard: "refuse" STRING POLARITY expr _NL                     -> refuse
      | "requires" req_list _NL                               -> requires
 req_list: expr ("," expr)*
 
@@ -123,7 +123,7 @@ action: _DEAL expr "to" ref _NL                              -> deal
       | "roll" NAME "in" ref _NL                             -> roll
       | "split" NAME "evenly" "among" NAME ["," "remainder" "to" NAME] _NL -> split
       | "respawn" "all" "monsters" "here" ["unless" expr] _NL -> respawn
-      | "say" STRING SAY_SCOPE? _NL                          -> say
+      | "say" STRING [SAY_SCOPE] [POLARITY expr] _NL          -> say
       | "show" NAME _NL                                      -> show
       | "create" "player" "named" NAME "as" NAME _NL         -> create_player
       | "trigger" NAME ["on" ref] _NL                        -> trigger
@@ -163,13 +163,15 @@ duel_rule: "turn" "based" ["," "alternating"] _NL            -> turn_based
 ?and_expr: not_expr ("and" not_expr)*
 ?not_expr: "not" not_expr                                    -> logical_not
          | comparison
-?comparison: sum (comp_op sum)?
+?comparison: clamp (comp_op clamp)?
 !comp_op: "is" "not" | "is" | ">=" | "<=" | ">" | "<"
+//  `at least` / `capped at` bind loosest of the arithmetic, so
+//  `its str - def at least 1` clamps the subtraction, not just `def`.
+?clamp: sum clamp_op*
 ?sum: product (add_op product)*
 !add_op: "+" | "-"
-?product: clamp (mul_op clamp)*
+?product: atom (mul_op atom)*
 !mul_op: "*" | "/"
-?clamp: atom clamp_op*
 clamp_op: "at" "least" atom                                  -> at_least
         | "at" "most" atom                                   -> at_most
         | "capped" "at" atom                                 -> capped_at
@@ -185,7 +187,7 @@ clamp_op: "at" "least" atom                                  -> at_least
      | "(" expr ")"
 
 path: NAME ("." NAME)*
-ref: "its" path -> its | path
+?ref: "its" path -> its | path
 amount_list: amount ("," amount)*
 amount: "all" NAME                                           -> all_of
       | expr NAME                                            -> of
@@ -200,9 +202,10 @@ string_list: STRING ("," STRING)*
 
 _DEAL: "deals" | "deal"
 QUANTIFIER.2: "both" | "either"
+POLARITY.2: "unless" | "when"
 VISIBILITY.2: "public" | "private"
 SAY_SCOPE.2: "publicly" | "privately"
-RESOLUTION.2: "accepted" | "declined"
+RESOLUTION.2: "accepted" | "declined" | "forfeited"
 TRIMMED.2: "trimmed"
 ONE_WAY.3: /one[ \t]+way/   // outrank NAME where both are legal
 OPTIONAL: "?"
