@@ -1,4 +1,5 @@
--- The project's sqlite3 file: saved characters, live simulation, and logs.
+-- The project's sqlite3 file: saved characters, live simulation, session
+-- state, and configuration.
 --
 -- Everything a save refers to is an id declared in the game source, never a
 -- display name, so renaming an item or a location does not orphan the
@@ -90,21 +91,17 @@ CREATE TABLE IF NOT EXISTS offer (
     PRIMARY KEY (kind, challenger, target)
 );
 
--- ------------------------------------------------------------------ logs
+-- --------------------------------------------------- session state
 --
--- One table, with a channel per stream: `event` for play, `session` for
--- resuming work, `discard` for what was considered and dropped.
+-- One brief paragraph per session, written only when asked. Git is the record
+-- of what changed and why; this is the human-readable digest on top of it, so
+-- there are deliberately no other project logs here.
 
-CREATE TABLE IF NOT EXISTS log (
+CREATE TABLE IF NOT EXISTS session_state (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     at      TEXT NOT NULL,
-    channel TEXT NOT NULL,
-    subject TEXT,
-    message TEXT NOT NULL,
-    data    TEXT
+    summary TEXT NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS log_channel_at ON log (channel, id DESC);
 
 -- --------------------------------------------------------------- config
 --

@@ -276,88 +276,37 @@ _db_option = click.option(
     help="The project's sqlite3 file. Defaults to gamebot.db, or $GAMEBOT_DB.")
 
 
-# ------------------------------------------------------------------- log
+# ----------------------------------------------------------------- state
 
 @main.command()
-@click.argument("channel", required=False)
-@click.option("-n", "--limit", default=20, show_default=True,
-              help="How many entries to show.")
-@click.option("--subject", help="Only entries about this subject.")
-@click.option("--since", help="Only entries at or after this timestamp.")
+@click.argument("summary", required=False)
+@click.option("--history", "-n", type=int, default=None,
+              help="Show the last N entries instead of only the latest.")
 @_db_option
-def log(channel: str | None, limit: int, subject: str | None,
-        since: str | None, db: Path | None) -> None:
-    """Query the project's logs: event, session or discard.
+def state(summary: str | None, history: int | None, db: Path | None) -> None:
+    """Show the latest session state, or save a new one.
 
-    With no channel, shows every stream. With no entries at all, lists which
-    channels hold what.
+    One brief paragraph per session. Git is the record of what changed and why;
+    this is the digest on top of it.
     """
     from gamebot.store import Store
 
     path = _db_path(db)
-    if not path.exists():
+    if summary is None and not path.exists():
         raise click.ClickException(f"no such file: {path}")
 
     with Store(path) as store:
-        entries = store.entries(channel, limit=limit, subject=subject,
-                                since=since)
-        if not entries:
-            held = store.channels()
-            if not held:
-                click.echo("nothing logged yet")
-                return
-            click.echo("no matching entries. Channels held:")
-            for name, count in held:
-                click.echo(f"  {name} ({count})")
-            return
-
-        for entry in reversed(entries):
-            click.secho(entry.at, fg="bright_black", nl=False)
-            click.secho(f"  {entry.channel:<8}", fg="cyan", nl=False)
-            if entry.subject:
-                click.secho(f"{entry.subject} ", bold=True, nl=False)
-            click.echo(entry.message)
-            for key, value in entry.data.items():
-                if key != "kind":
-                    click.secho(f"    {key}: {value}", fg="bright_black")
-
-
-# --------------------------------------------------------------- discard
-
-@main.command()
-@click.argument("what")
-@click.option("--why", required=True, help="Why it was dropped.")
-@_db_option
-def discard(what: str, why: str, db: Path | None) -> None:
-    """Record something considered and dropped, as the briefs evolve."""
-    from gamebot.store import DISCARD, Store
-
-    with Store(_db_path(db)) as store:
-        store.log(DISCARD, why, subject=what)
-    click.secho(f"discarded: {what}", fg="green")
-
-
-# ----------------------------------------------------------------- state
-
-@main.command()
-@click.argument("note", required=False)
-@_db_option
-def state(note: str | None, db: Path | None) -> None:
-    """Show the latest session state, or save a new one."""
-    from gamebot.store import SESSION, Store
-
-    path = _db_path(db)
-    if note is None and not path.exists():
-        raise click.ClickException(f"no such file: {path}")
-
-    with Store(path) as store:
-        if note is not None:
-            store.log(SESSION, note)
+        if summary is not None:
+            store.save_state(summary)
             click.secho("saved", fg="green")
             return
-        latest = store.latest(SESSION)
-        if latest is None:
+
+        entries = store.state(history or 1)
+        if not entries:
             click.echo("no session state saved yet")
             return
-        click.secho(latest.at, fg="bright_black")
-        click.echo(latest.message)
+        for entry in reversed(entries):
+            click.secho(entry.at, fg="bright_black")
+            click.echo(entry.summary)
+            if len(entries) > 1:
+                click.echo()

@@ -57,19 +57,14 @@ class Engine:
         self.sim.players = players
         self._vocabulary = self._index()
         self._talking.clear()
-        self._persist("reload", None, f"reloaded {world.title or 'the world'}")
+        self._persist()
 
     # ------------------------------------------------------- persistence
 
-    def _persist(self, kind: str, user_id: str | None,
-                 message: str | None = None) -> None:
+    def _persist(self) -> None:
         """Save after anything that changed the simulation."""
-        if self.store is None:
-            return
-        self.store.save(self.sim)
-        if message:
-            from gamebot.store import EVENT
-            self.store.log(EVENT, message, subject=user_id, kind=kind)
+        if self.store is not None:
+            self.store.save(self.sim)
 
     # ------------------------------------------------------------ clock
 
@@ -134,8 +129,7 @@ class Engine:
                 player.equipped[item.slot] = ref.name
                 player.take(ref.name, 1)
         self.sim.players[user_id] = player
-        self._persist("register", user_id,
-                      f"{name} the {char_class} joined in {player.location}")
+        self._persist()
         if not announce:
             return Outcome()
         return Outcome([Message(
@@ -219,7 +213,7 @@ class Engine:
         self._after(verb, player, turn, duel)
         self._render_view(turn)
         if not turn.refused:
-            self._persist("verb", player.user_id, f"{player.name}: {verb.name}")
+            self._persist()
         return Outcome(turn.messages)
 
     def _unbound_text(self, exc: Unbound, player: Player) -> str:
@@ -264,8 +258,7 @@ class Engine:
         seconds = declared.expires_after or 60
         self.sim.offers.append(Offer(declared.name, player.user_id,
                                      target.user_id, self.sim.now + seconds))
-        self._persist("offer", player.user_id,
-                      f"{player.name} challenged {target.name}")
+        self._persist()
         return Outcome([Message(
             f"{player.name} challenges {target.name} to a {declared.name}. "
             f"{target.name} has {seconds} seconds to accept or decline.")])
@@ -449,7 +442,7 @@ class Engine:
             self._talking[user_id] = talk
             return
         self._talking.pop(user_id, None)
-        self._persist("flow", user_id)
+        self._persist()
         if step.registered:
             name, char_class = step.registered
             #  The flow says its own line; do not announce it twice.

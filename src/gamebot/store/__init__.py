@@ -2,23 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Iterable
 
-from gamebot.engine.state import Duel, Monster, Offer, Player, Sim
-from gamebot.lang.model import World
+from gamebot.engine.state import Duel, Offer, Player, Sim
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 DEFAULT_PATH = Path("gamebot.db")
-
-EVENT = "event"
-SESSION = "session"
-DISCARD = "discard"
 
 
 def now() -> str:
@@ -26,15 +19,12 @@ def now() -> str:
 
 
 @dataclass(frozen=True)
-class Entry:
-    """One row of the log."""
+class SessionState:
+    """One session's digest."""
 
     id: int
     at: str
-    channel: str
-    subject: str | None
-    message: str
-    data: dict[str, Any]
+    summary: str
 
 
 class Store:
@@ -60,56 +50,42 @@ class Store:
     def _migrate(self) -> None:
         sql = (files("gamebot.store") / "schema.sql").read_text(encoding="utf-8")
         self.db.executescript(sql)
+        self._drop_old_logs()
         self.db.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
             "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
             (SCHEMA_VERSION,))
 
-    # --------------------------------------------------------------- logs
+    def _drop_old_logs(self) -> None:
+        """Schema 1 kept event and discard streams. Git is that record."""
+        present = self.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'log'"
+        ).fetchone()
+        if not present:
+            return
+        self.db.execute(
+            "INSERT INTO session_state (at, summary) "
+            "SELECT at, message FROM log WHERE channel = 'session' "
+            "ORDER BY id")
+        self.db.execute("DROP TABLE log")
 
-    def log(self, channel: str, message: str, *, subject: str | None = None,
-            **data: Any) -> int:
+    # ------------------------------------------------------- session state
+
+    def save_state(self, summary: str) -> int:
         cursor = self.db.execute(
-            "INSERT INTO log (at, channel, subject, message, data) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (now(), channel, subject, message,
-             json.dumps(data, default=str) if data else None))
+            "INSERT INTO session_state (at, summary) VALUES (?, ?)",
+            (now(), summary.strip()))
         return int(cursor.lastrowid)
 
-    def entries(self, channel: str | None = None, *, limit: int = 50,
-                subject: str | None = None, since: str | None = None
-                ) -> list[Entry]:
-        clauses, values = [], []
-        if channel:
-            clauses.append("channel = ?")
-            values.append(channel)
-        if subject:
-            clauses.append("subject = ?")
-            values.append(subject)
-        if since:
-            clauses.append("at >= ?")
-            values.append(since)
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    def state(self, limit: int = 1) -> list[SessionState]:
         rows = self.db.execute(
-            f"SELECT * FROM log {where} ORDER BY id DESC LIMIT ?",
-            (*values, limit)).fetchall()
-        return [self._entry(row) for row in rows]
+            "SELECT * FROM session_state ORDER BY id DESC LIMIT ?",
+            (limit,)).fetchall()
+        return [SessionState(r["id"], r["at"], r["summary"]) for r in rows]
 
-    def latest(self, channel: str) -> Entry | None:
-        found = self.entries(channel, limit=1)
+    def latest_state(self) -> SessionState | None:
+        found = self.state(1)
         return found[0] if found else None
-
-    @staticmethod
-    def _entry(row: sqlite3.Row) -> Entry:
-        return Entry(id=row["id"], at=row["at"], channel=row["channel"],
-                     subject=row["subject"], message=row["message"],
-                     data=json.loads(row["data"]) if row["data"] else {})
-
-    def channels(self) -> list[tuple[str, int]]:
-        rows = self.db.execute(
-            "SELECT channel, COUNT(*) AS n FROM log GROUP BY channel "
-            "ORDER BY channel").fetchall()
-        return [(row["channel"], row["n"]) for row in rows]
 
     # ---------------------------------------------------------- snapshot
 

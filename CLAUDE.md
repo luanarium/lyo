@@ -33,13 +33,13 @@ A game engine for chatbot games
 
 - Project management: git + uv.
 - Use git for version control. Keep it local — do not add remotes or push.
-- Project management has a basic CLI following the UCI convention (`package.section.option`; get/set/show/commit style), including querying logs.
+- Project management has a basic CLI following the UCI convention (`package.section.option`; get/set/show/commit style), including querying session state.
 - The CLI includes a bundle command: zips the project and generates any documentation not yet written or updated.
 
 ## Project Management CLI
 
 - A basic CLI manages the project, following the UCI convention (`package.section.option`; get/set/show/commit style).
-- Query logs from the CLI. Logs (including session state and the discard log) live in the project's sqlite3 file.
+- Query session state from the CLI. It lives in the project's sqlite3 file, alongside saved characters and configuration.
 - Bundle command: zips the project and generates any documentation not yet written or updated.
 - The CLI packs and unpacks game cartridges and tangles markdown game sources.
   Lint accepts all three forms (`.md`, `.png`, `.game`).
@@ -69,7 +69,8 @@ A game engine for chatbot games
 
 ## Session State
 
-- When I say "save project state", store only relevant, very sparse details that help resume in the next session (current focus, open decisions, next step). Stored in the project's sqlite3 log so the CLI can query it. Read the latest entry at session start.
+- When I say "save project state", write one brief high-level paragraph summarising what changed in the session. Stored in the project's sqlite3 file so the CLI can query it. Read the latest entry at session start.
+- Git is the record of what changed and why; session state is only the human-readable digest on top of it. Do not keep parallel project logs.
 
 ## Documentation
 
@@ -79,8 +80,7 @@ A game engine for chatbot games
   Project documentation stays deferred.
 - When I discuss deployment or preparing a deliverable, generate the end-user documentation.
 - Briefs: concise, bloat-free language, with a mini table defining terms used (acronyms, software names, method names). Git is the versioning; no numbered filenames (that convention is for web chat only).
-- Keep a log of what gets discarded as briefs evolve.
-- Logs are stored in a sqlite3 file.
+- Session state is stored in the project's sqlite3 file. Commit messages are the record of what was discarded and why.
 
 | Term            | Definition                                                                                     |
 | --------------- | ---------------------------------------------------------------------------------------------- |

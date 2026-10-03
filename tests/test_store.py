@@ -7,7 +7,7 @@ import pytest
 from gamebot.engine import Engine
 from gamebot.lang.check import check
 from gamebot.lang.model import slug
-from gamebot.store import DISCARD, EVENT, SESSION, Store
+from gamebot.store import Store
 
 WORLD = Path(__file__).parent.parent / "world" / "kairos.md"
 
@@ -185,44 +185,73 @@ def test_a_save_naming_something_gone_is_reported_not_crashed(world, tmp_path):
         assert "u1" in engine.sim.players, "the character still loads"
 
 
-# ------------------------------------------------------------------- logs
+# --------------------------------------------------------- session state
 
-def test_play_is_logged_with_a_subject(world, db):
+def test_session_state_saves_and_reads_back(db):
+    db.save_state("  Built the store; next is the UCI config CLI.  ")
+    latest = db.latest_state()
+    assert latest.summary == "Built the store; next is the UCI config CLI."
+    assert latest.at
+
+
+def test_session_state_keeps_a_history_newest_first(db):
+    for note in ("first", "second", "third"):
+        db.save_state(note)
+    assert [e.summary for e in db.state(2)] == ["third", "second"]
+    assert db.latest_state().summary == "third"
+
+
+def test_no_session_state_yet(db):
+    assert db.latest_state() is None
+    assert db.state(5) == []
+
+
+def test_play_is_not_logged(world, db):
+    """Git is the record of change; play writes no project log."""
     engine = Engine(world, seed=7, store=db)
     engine.register("u1", "Brynn", "Warrior")
     engine.command("u1", "look")
-
-    entries = db.entries(EVENT, limit=10)
-    assert any("joined" in e.message for e in entries)
-    assert all(e.subject == "u1" for e in entries)
-
-
-def test_channels_are_separate(db):
-    db.log(SESSION, "focus: the store")
-    db.log(DISCARD, "too many dependencies", subject="Evennia")
-    db.log(EVENT, "something happened")
-
-    assert db.latest(SESSION).message == "focus: the store"
-    assert db.latest(DISCARD).subject == "Evennia"
-    assert dict(db.channels()) == {SESSION: 1, DISCARD: 1, EVENT: 1}
+    assert db.latest_state() is None
+    tables = {row["name"] for row in db.db.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert "log" not in tables
 
 
-def test_log_carries_structured_data(db):
-    db.log(EVENT, "attacked", subject="u1", target="Dire Wolf", dealt=8)
-    entry = db.latest(EVENT)
-    assert entry.data == {"target": "Dire Wolf", "dealt": 8}
+def test_a_schema_one_file_is_migrated(tmp_path):
+    """An older file kept event and discard streams. Only session survives."""
+    path = tmp_path / "old.db"
+    import sqlite3
 
+    old = sqlite3.connect(path)
+    old.executescript("""
+        CREATE TABLE log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL,
+            channel TEXT NOT NULL, subject TEXT, message TEXT NOT NULL,
+            data TEXT);
+        INSERT INTO log (at, channel, subject, message) VALUES
+            ('2026-10-01T00:00:00+00:00', 'session', NULL, 'the first session'),
+            ('2026-10-02T00:00:00+00:00', 'discard', 'Evennia', 'too heavy'),
+            ('2026-10-02T00:00:01+00:00', 'event', 'u1', 'Brynn: attack'),
+            ('2026-10-03T00:00:00+00:00', 'session', NULL, 'the second session');
+    """)
+    old.commit()
+    old.close()
 
-def test_entries_can_be_filtered_by_subject(db):
-    db.log(EVENT, "one", subject="u1")
-    db.log(EVENT, "two", subject="u2")
-    assert [e.message for e in db.entries(EVENT, subject="u2")] == ["two"]
+    with Store(path) as store:
+        assert [e.summary for e in store.state(5)] == [
+            "the second session", "the first session"]
+        tables = {row["name"] for row in store.db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")}
+        assert "log" not in tables
+        version = store.db.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+        assert version["value"] == "2"
 
 
 def test_opening_an_existing_file_is_safe(tmp_path):
     path = tmp_path / "gamebot.db"
     with Store(path) as store:
-        store.log(EVENT, "first")
+        store.save_state("first")
     with Store(path) as store:
-        store.log(EVENT, "second")
-        assert len(store.entries(EVENT)) == 2
+        store.save_state("second")
+        assert len(store.state(5)) == 2
