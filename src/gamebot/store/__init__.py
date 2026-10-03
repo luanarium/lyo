@@ -96,7 +96,12 @@ class Store:
     # ---------------------------------------------------------- snapshot
 
     def save(self, sim: Sim) -> None:
-        """Write the whole simulation. It is small, so there are no deltas."""
+        """Write the whole simulation. It is small, so there are no deltas.
+
+        Rows are upserted rather than deleted and rebuilt: a wholesale rebuild
+        silently resets any column it does not restate, which `created_at`
+        already had to work around by hand.
+        """
         world = sim.world
         items = {decl.name: decl.id for decl in world.items.values()}
         locations = {decl.name: decl.id for decl in world.locations.values()}
@@ -105,27 +110,15 @@ class Store:
 
         with self.db:
             self.db.execute("BEGIN")
-            known = {row["user_id"]: row["created_at"] for row in
-                     self.db.execute("SELECT user_id, created_at FROM player")}
-            self.db.execute("DELETE FROM player")
             for player in sim.players.values():
-                self._save_player(player, known, items, locations, classes)
+                self._save_player(player, items, locations, classes)
+            self._prune("player", "user_id", sim.players)
 
-            self.db.execute("DELETE FROM monster_state")
-            self.db.execute("DELETE FROM monster_contributor")
             for location, room in sim.rooms.items():
                 location_id = locations.get(location, location)
                 for name, monster in room.items():
-                    monster_id = monsters.get(name, name)
-                    self.db.execute(
-                        "INSERT INTO monster_state (location_id, monster_id, hp) "
-                        "VALUES (?, ?, ?)", (location_id, monster_id, monster.hp))
-                    for ordinal, user_id in enumerate(monster.contributors):
-                        self.db.execute(
-                            "INSERT INTO monster_contributor "
-                            "(location_id, monster_id, user_id, ordinal) "
-                            "VALUES (?, ?, ?, ?)",
-                            (location_id, monster_id, user_id, ordinal))
+                    self._save_monster(location_id, monsters.get(name, name),
+                                       monster)
 
             self.db.execute("DELETE FROM duel")
             for duel in sim.duels:
@@ -133,35 +126,75 @@ class Store:
                     "INSERT INTO duel (a, b, turn) VALUES (?, ?, ?)",
                     (duel.a, duel.b, duel.turn))
 
+    def _prune(self, table: str, key: str, keep) -> None:
+        """Drop rows for anything no longer in the simulation."""
+        kept = list(keep)
+        if not kept:
+            self.db.execute(f"DELETE FROM {table}")
+            return
+        marks = ", ".join("?" * len(kept))
+        self.db.execute(f"DELETE FROM {table} WHERE {key} NOT IN ({marks})", kept)
 
-    def _save_player(self, player: Player, known: dict[str, str],
-                     items: dict[str, str], locations: dict[str, str],
-                     classes: dict[str, str]) -> None:
-        stamp = now()
+    def _save_monster(self, location_id: str, monster_id: str,
+                      monster) -> None:
+        self.db.execute(
+            "INSERT INTO monster_state (location_id, monster_id, hp) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT (location_id, monster_id) DO UPDATE SET hp = excluded.hp",
+            (location_id, monster_id, monster.hp))
+        self.db.execute(
+            "DELETE FROM monster_contributor "
+            "WHERE location_id = ? AND monster_id = ?",
+            (location_id, monster_id))
+        for ordinal, user_id in enumerate(monster.contributors):
+            self.db.execute(
+                "INSERT INTO monster_contributor "
+                "(location_id, monster_id, user_id, ordinal) VALUES (?, ?, ?, ?)",
+                (location_id, monster_id, user_id, ordinal))
+
+    def _save_player(self, player: Player, items: dict[str, str],
+                     locations: dict[str, str], classes: dict[str, str]) -> None:
+        #  created_at is written once and never restated, so it cannot be lost.
         self.db.execute(
             "INSERT INTO player (user_id, name, class_id, location_id, hp, "
             "max_hp, mp, max_mp, gold, created_at, seen_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (user_id) DO UPDATE SET "
+            "  name = excluded.name, class_id = excluded.class_id, "
+            "  location_id = excluded.location_id, hp = excluded.hp, "
+            "  max_hp = excluded.max_hp, mp = excluded.mp, "
+            "  max_mp = excluded.max_mp, gold = excluded.gold, "
+            "  seen_at = excluded.seen_at",
             (player.user_id, player.name,
              classes.get(player.char_class, player.char_class),
              locations.get(player.location, player.location),
              player.hp, player.max_hp, player.mp, player.max_mp, player.gold,
-             known.get(player.user_id, stamp), stamp))
+             now(), now()))
 
-        for stat, value in player.stats.items():
-            self.db.execute(
-                "INSERT INTO player_stat (user_id, stat, value) VALUES (?, ?, ?)",
-                (player.user_id, stat, value))
-        for track, value in player.progress.items():
-            self.db.execute(
-                "INSERT INTO player_progress (user_id, track, value) "
-                "VALUES (?, ?, ?)", (player.user_id, track, value))
+        #  These are plain key/value sets with no columns of their own, so
+        #  rebuilding them per player is safe and keeps removals correct.
+        for table, column, rows in (
+            ("player_stat", "stat", player.stats.items()),
+            ("player_progress", "track", player.progress.items()),
+        ):
+            self.db.execute(f"DELETE FROM {table} WHERE user_id = ?",
+                            (player.user_id,))
+            for name, value in rows:
+                self.db.execute(
+                    f"INSERT INTO {table} (user_id, {column}, value) "
+                    f"VALUES (?, ?, ?)", (player.user_id, name, value))
+
+        self.db.execute("DELETE FROM player_item WHERE user_id = ?",
+                        (player.user_id,))
         for name, quantity in player.inventory.items():
             if quantity > 0:
                 self.db.execute(
                     "INSERT INTO player_item (user_id, item_id, quantity) "
                     "VALUES (?, ?, ?)",
                     (player.user_id, items.get(name, name), quantity))
+
+        self.db.execute("DELETE FROM player_equipment WHERE user_id = ?",
+                        (player.user_id,))
         for slot, name in player.equipped.items():
             if name:
                 self.db.execute(

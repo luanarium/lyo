@@ -281,3 +281,69 @@ def test_a_schema_two_file_drops_offers_and_the_counted_clock(tmp_path):
         assert "offer" not in tables
         assert store.db.execute(
             "SELECT 1 FROM meta WHERE key = 'clock'").fetchone() is None
+
+
+# --------------------------------------------------------------- upserting
+
+def test_created_at_is_written_once_and_never_restated(world, tmp_path):
+    """The fragility the upsert removes: a rebuild resets what it omits."""
+    path = tmp_path / "gamebot.db"
+    with Store(path) as store:
+        engine = Engine(world, seed=7, store=store)
+        engine.register("u1", "Brynn", "Warrior")
+        first = store.db.execute(
+            "SELECT created_at, seen_at FROM player").fetchone()
+
+        for _ in range(3):
+            engine.command("u1", "look")
+        again = store.db.execute(
+            "SELECT created_at, seen_at FROM player").fetchone()
+
+        assert again["created_at"] == first["created_at"]
+        assert again["seen_at"] >= first["seen_at"]
+
+
+def test_a_column_the_save_does_not_know_about_survives(world, tmp_path):
+    """A later migration can add a column without the save clearing it."""
+    path = tmp_path / "gamebot.db"
+    with Store(path) as store:
+        engine = Engine(world, seed=7, store=store)
+        engine.register("u1", "Brynn", "Warrior")
+        store.db.execute("ALTER TABLE player ADD COLUMN note TEXT")
+        store.db.execute("UPDATE player SET note = 'keep me'")
+
+        engine.command("u1", "look")
+        row = store.db.execute("SELECT note FROM player").fetchone()
+        assert row["note"] == "keep me"
+
+
+def test_a_departed_player_is_pruned(world, tmp_path):
+    path = tmp_path / "gamebot.db"
+    with Store(path) as store:
+        engine = Engine(world, seed=7, store=store)
+        engine.register("u1", "Brynn", "Warrior")
+        engine.register("u2", "Selene", "Mage")
+        assert store.characters() == 2
+
+        del engine.sim.players["u2"]
+        store.save(engine.sim)
+        assert store.characters() == 1
+        assert store.db.execute(
+            "SELECT COUNT(*) AS n FROM player_stat WHERE user_id = 'u2'"
+        ).fetchone()["n"] == 0
+
+
+def test_a_consumed_item_leaves_no_row(world, tmp_path):
+    path = tmp_path / "gamebot.db"
+    with Store(path) as store:
+        engine = Engine(world, seed=7, store=store)
+        engine.register("u1", "Brynn", "Warrior")
+        player = engine.sim.players["u1"]
+        player.hp = 1
+        for _ in range(2):
+            engine.command("u1", "use potion")
+            player.hp = 1
+        assert "Health Potion" not in player.inventory
+        assert store.db.execute(
+            "SELECT COUNT(*) AS n FROM player_item "
+            "WHERE item_id = 'health_potion'").fetchone()["n"] == 0
