@@ -33,7 +33,7 @@ location_decl: "location" STRING ":" _NL _INDENT location_stmt+ _DEDENT
 location_stmt: STRING _NL                                    -> description
              | "has" name_list _NL                           -> features
              | "spawns" string_list _NL                      -> spawns
-             | ["one" "way"] NAME "to" STRING _NL             -> exit
+             | [ONE_WAY] NAME "to" STRING _NL                 -> exit
              | npc_decl
 
 npc_decl: "npc" STRING "as" STRING ":" _NL _INDENT npc_stmt+ _DEDENT
@@ -107,7 +107,7 @@ stmt: visibility
 // `then` sequences any effectful statement, not just a single action.
 sequenced: ["then"] (action | each_stmt | loop_stmt)
 
-visibility: ("public" | "private") _NL
+visibility: VISIBILITY _NL
 
 guard: "refuse" STRING ("when" | "unless") expr _NL          -> refuse
      | "requires" req_list _NL                               -> requires
@@ -123,7 +123,7 @@ action: _DEAL expr "to" ref _NL                              -> deal
       | "roll" NAME "in" ref _NL                             -> roll
       | "split" NAME "evenly" "among" NAME ["," "remainder" "to" NAME] _NL -> split
       | "respawn" "all" "monsters" "here" ["unless" expr] _NL -> respawn
-      | "say" STRING ("publicly" | "privately")? _NL         -> say
+      | "say" STRING SAY_SCOPE? _NL                          -> say
       | "show" NAME _NL                                      -> show
       | "create" "player" "named" NAME "as" NAME _NL         -> create_player
       | "trigger" NAME ["on" ref] _NL                        -> trigger
@@ -140,7 +140,7 @@ ask_opt: "accepts" accept_spec _NL                           -> accepts
        | "offers" "every" NAME "by" name_list _NL            -> offers
        | "times" "out" "after" quantity _NL                  -> timeout
        | "reprompts" "forever" _NL                           -> reprompts
-accept_spec: "any" NAME ("," "trimmed")?                     -> any_of
+accept_spec: "any" NAME ("," TRIMMED)?                       -> any_of
            | "any" "item" "in" NAME ["to" action_word]        -> any_item_in
            | "the" name_list                                  -> one_of_names
            | string_list ["to" action_word]                   -> one_of_literals
@@ -148,8 +148,9 @@ action_word: "stop"                                          -> aw_stop
            | "buy" "it"                                       -> aw_buy
 
 duel_stmt: "expires" "after" quantity ["," "saying" STRING] _NL -> expires
-         | ("accepted" | "declined") "by" "verb" NAME _NL    -> resolved_by
+         | resolved_by
          | "while" "active" ":" _NL _INDENT duel_rule+ _DEDENT -> while_active
+resolved_by: RESOLUTION "by" "verb" NAME _NL
 duel_rule: "turn" "based" ["," "alternating"] _NL            -> turn_based
          | "armor" "applies" _NL                             -> armor_applies
          | "no" "retaliation" _NL                            -> no_retaliation
@@ -198,7 +199,12 @@ string_list: STRING ("," STRING)*
 // ===================== terminals =====================
 
 _DEAL: "deals" | "deal"
-QUANTIFIER.2: "both" | "either"   // outrank NAME where both are legal
+QUANTIFIER.2: "both" | "either"
+VISIBILITY.2: "public" | "private"
+SAY_SCOPE.2: "publicly" | "privately"
+RESOLUTION.2: "accepted" | "declined"
+TRIMMED.2: "trimmed"
+ONE_WAY.3: /one[ \t]+way/   // outrank NAME where both are legal
 OPTIONAL: "?"
 NAME: /[a-zA-Z_][a-zA-Z_0-9]*/
 NUMBER: /\d+/

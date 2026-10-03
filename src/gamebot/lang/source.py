@@ -16,15 +16,25 @@ class Source:
     origin: str
     text: str
     line_map: tuple[int, ...] | None = None
+    raw: str | None = None
+    """The document as the author wrote it, for showing a line back to them."""
+
+    def line_of(self, origin_line: int) -> str:
+        """The author's own line, for a caret under a diagnostic."""
+        document = self.raw if self.raw is not None else self.text
+        lines = document.split("\n")
+        return lines[origin_line - 1] if 1 <= origin_line <= len(lines) else ""
+
+    def origin_line(self, line: int) -> int:
+        if self.line_map is None:
+            return line
+        if 1 <= line <= len(self.line_map):
+            return self.line_map[line - 1]
+        return self.line_map[-1] if self.line_map else line
 
     def where(self, line: int, column: int) -> str:
         """Format a position in terms of the file the author edits."""
-        if self.line_map is not None:
-            if 1 <= line <= len(self.line_map):
-                line = self.line_map[line - 1]
-            elif self.line_map:
-                line = self.line_map[-1]
-        return f"{self.origin}:{line}:{column}"
+        return f"{self.origin}:{self.origin_line(line)}:{column}"
 
 
 def load(path: str | Path) -> Source:
@@ -37,19 +47,20 @@ def load(path: str | Path) -> Source:
     suffix = path.suffix.lower()
 
     if suffix == ".game":
-        return Source(origin=path.name, text=path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        return Source(origin=path.name, text=text, raw=text)
 
     if suffix in (".md", ".markdown"):
         return _from_markdown(path.name, path.read_text(encoding="utf-8"))
 
     if suffix == ".png":
         markdown = png_mod.unpack(path.read_bytes())
-        inner = _from_markdown(path.name, markdown)
-        return Source(origin=inner.origin, text=inner.text, line_map=inner.line_map)
+        return _from_markdown(path.name, markdown)
 
     raise ValueError(f"not a game source file: {path.name} (expected .game, .md or .png)")
 
 
 def _from_markdown(origin: str, markdown: str) -> Source:
     tangled = tangle(markdown)
-    return Source(origin=origin, text=tangled.text, line_map=tangled.line_map)
+    return Source(origin=origin, text=tangled.text,
+                  line_map=tangled.line_map, raw=markdown)

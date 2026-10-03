@@ -409,7 +409,6 @@ verb travel <exit>:
   public
   refuse "You cannot walk out of a duel." when dueling
   move player to exit
-  then trigger respawn
   say "{player} travels to {here}."
 
 verb look:
@@ -532,6 +531,16 @@ offer duel from <player> to <player>:
     armor applies
     no retaliation
     ends when either hp is 0, with no prize
+
+verb accept:
+  public
+  refuse "You have no challenge waiting." unless challenged
+  say "{player} accepts the challenge."
+
+verb decline:
+  public
+  refuse "You have no challenge waiting." unless challenged
+  say "{player} declines the challenge."
 
 verb forfeit:
   public

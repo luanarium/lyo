@@ -116,7 +116,7 @@ WORLD = Path(__file__).parent.parent / "world"
 def test_shipped_world_parses():
     source = load(WORLD / "kairos.md")
     tree = parse(source.text)
-    assert len(tree.children) == 74
+    assert len(tree.children) == 76
 
     kinds = {c.children[0].data for c in tree.children}
     missing = [d for d in DECLARATIONS if f"{d}_decl" not in kinds]
@@ -128,5 +128,5 @@ def test_shipped_world_packs_into_a_cartridge(tmp_path):
     cart = tmp_path / "kairos.png"
     cart.write_bytes(png_mod.pack(png_mod.blank(), markdown))
 
-    assert len(parse(load(cart).text).children) == 74
+    assert len(parse(load(cart).text).children) == 76
     assert cart.stat().st_size < 60_000, "a cartridge should stay small"

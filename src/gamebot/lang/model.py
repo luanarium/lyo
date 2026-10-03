@@ -1,0 +1,170 @@
+"""The world a game declares, once its names have been bound."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from lark import Tree
+
+
+@dataclass(frozen=True)
+class Ref:
+    """A name used somewhere, with the position that used it."""
+
+    name: str
+    line: int
+    column: int
+
+
+@dataclass
+class Decl:
+    """Common head of every declaration."""
+
+    name: str
+    line: int
+    column: int
+    tree: Tree | None = None
+
+
+@dataclass
+class Exit(Decl):
+    direction: str = ""
+    target: Ref | None = None
+    one_way: bool = False
+    implied_from: str | None = None
+
+
+@dataclass
+class Location(Decl):
+    description: str = ""
+    features: set[str] = field(default_factory=set)
+    exits: list[Exit] = field(default_factory=list)
+    spawns: list[Ref] = field(default_factory=list)
+    npcs: list[tuple[str, str]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Drop:
+    """One rolled reward: an item, how many, and how often."""
+
+    ref: Ref
+    low: int = 1
+    high: int = 1
+    chance: int = 100
+
+
+@dataclass
+class Monster(Decl):
+    description: str = ""
+    stats: dict[str, int] = field(default_factory=dict)
+    gold: tuple[int, int] = (0, 0)
+    drops: list[Drop] = field(default_factory=list)
+
+
+@dataclass
+class Item(Decl):
+    kind: str = ""
+    is_default: bool = False
+    description: str = ""
+    attrs: dict[str, int] = field(default_factory=dict)
+    scales: str | None = None
+    cost: int | None = None
+    grants: dict[str, int] = field(default_factory=dict)
+    aliases: list[str] = field(default_factory=list)
+    handlers: set[str] = field(default_factory=set)
+
+    SLOTS = {"weapon": "weapon", "body armor": "armor", "shield": "shield",
+             "accessory": "accessory"}
+
+    @property
+    def slot(self) -> str | None:
+        return self.SLOTS.get(self.kind)
+
+
+@dataclass
+class CharClass(Decl):
+    description: str = ""
+    stats: dict[str, int] = field(default_factory=dict)
+    equipped: list[tuple[int, Ref]] = field(default_factory=list)
+    carried: list[tuple[int, Ref]] = field(default_factory=list)
+
+    @property
+    def kit(self) -> list[tuple[int, Ref]]:
+        return self.equipped + self.carried
+
+
+@dataclass
+class Spell(Decl):
+    cost: dict[str, int] = field(default_factory=dict)
+    scales: str | None = None
+    provokes: bool = False
+    known_by: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Track(Decl):
+    raises: str = ""
+    amount: int = 0
+    triggers: list[str] = field(default_factory=list)
+    scaling: str | None = None
+
+
+@dataclass
+class Slot(Decl):
+    optional: bool = False
+
+
+@dataclass
+class Verb(Decl):
+    slots: list[Slot] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)
+    visibility: str | None = None
+    triggers: list[Ref] = field(default_factory=list)
+
+
+@dataclass
+class Flow(Verb):
+    asks: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Offer(Verb):
+    resolvers: list[Ref] = field(default_factory=list)
+    expires_after: int | None = None
+
+
+@dataclass
+class Shop(Decl):
+    at: Ref | None = None
+    stock: list[Ref] = field(default_factory=list)
+
+
+@dataclass
+class Rules(Decl):
+    defines: dict[str, Tree] = field(default_factory=dict)
+    handlers: set[str] = field(default_factory=set)
+
+
+@dataclass
+class World:
+    title: str = ""
+    start_at: Ref | None = None
+    start_with: dict[str, int] = field(default_factory=dict)
+    locations: dict[str, Location] = field(default_factory=dict)
+    monsters: dict[str, Monster] = field(default_factory=dict)
+    items: dict[str, Item] = field(default_factory=dict)
+    classes: dict[str, CharClass] = field(default_factory=dict)
+    spells: dict[str, Spell] = field(default_factory=dict)
+    tracks: dict[str, Track] = field(default_factory=dict)
+    verbs: dict[str, Verb] = field(default_factory=dict)
+    flows: dict[str, Flow] = field(default_factory=dict)
+    offers: dict[str, Offer] = field(default_factory=dict)
+    shops: list[Shop] = field(default_factory=list)
+    rules: Rules | None = None
+
+    def item_aliases(self) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for item in self.items.values():
+            for alias in item.aliases:
+                out[alias.casefold()] = item.name
+        return out
