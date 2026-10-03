@@ -107,7 +107,8 @@ CREATE TABLE IF NOT EXISTS config (
     package   TEXT NOT NULL,
     section   TEXT NOT NULL,
     option    TEXT NOT NULL,
-    value     TEXT,
-    staged    TEXT,
+    value     TEXT,          -- the committed value, NULL if never committed
+    staged    TEXT,          -- a pending value, awaiting commit
+    staged_op TEXT,          -- 'set' or 'delete', NULL when nothing is pending
     PRIMARY KEY (package, section, option)
 );

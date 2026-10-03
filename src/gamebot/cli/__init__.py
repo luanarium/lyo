@@ -172,30 +172,45 @@ def adapters() -> None:
         for setting in adapter.settings:
             note = " (required)" if setting.required else (
                 f" [{setting.default}]" if setting.default else "")
-            click.echo(f"    {name}.{setting.key}{note} -- {setting.help}")
+            click.echo(f"    adapter.{name}.{setting.key}{note} -- {setting.help}")
+    click.echo()
+    click.echo("Set these with: gamebot set adapter.<name>.<key>=<value>, "
+               "then gamebot commit")
 
 
 # -------------------------------------------------------------------- run
 
 @main.command()
-@click.argument("source", default="world/kairos.md",
+@click.argument("source", required=False,
                 type=click.Path(exists=True, path_type=Path))
-@click.option("--adapter", "-a", default="discord", show_default=True,
-              help="Which bot adapter to run.")
+@click.option("--adapter", "-a", default=None,
+              help="Which bot adapter to run. Default: adapter.main.name, "
+                   "else discord.")
 @click.option("--set", "-s", "overrides", multiple=True, metavar="KEY=VALUE",
               help="A setting, in UCI shape: -s discord.token=...")
 @click.option("--db", type=click.Path(path_type=Path), default=None,
               help="The project's sqlite3 file. Defaults to gamebot.db.")
 @click.option("--check", is_flag=True,
               help="Validate the source and the settings, then stop.")
-def run(source: Path, adapter: str, overrides: tuple[str, ...],
+def run(source: Path | None, adapter: str | None, overrides: tuple[str, ...],
         db: Path | None, check: bool) -> None:
     """Serve a game to a chat platform.
 
-    Settings may also come from the environment, as GAMEBOT_<ADAPTER>_<KEY>.
+    Source and adapter default to `game.main.source` and `adapter.main.name`.
+    Settings come from configuration, then GAMEBOT_<ADAPTER>_<KEY>, then -s.
     """
     from gamebot.engine import Engine
     from gamebot.lang.check import check as check_source
+    from gamebot.store import Store
+
+    store = Store(_db_path(db))
+    config = store.config
+    source = source or Path(config.committed("game.main.source")
+                            or "world/kairos.md")
+    adapter = adapter or config.committed("adapter.main.name") or "discord"
+    if not source.exists():
+        store.close()
+        raise click.ClickException(f"no such game source: {source}")
 
     report = check_source(source)
     if not report.ok:
@@ -209,11 +224,14 @@ def run(source: Path, adapter: str, overrides: tuple[str, ...],
         known = ", ".join(sorted(found)) or "none"
         raise click.ClickException(f"no adapter called {adapter!r} (have: {known})")
 
-    values = _settings(chosen, overrides)
+    values = _settings(chosen, overrides, config)
     missing = [s.key for s in chosen.settings if s.required and not values.get(s.key)]
     if missing:
-        hints = ", ".join(f"-s {adapter}.{key}=..." for key in missing)
-        raise click.ClickException(f"{adapter} needs: {hints}")
+        hints = ", ".join(f"adapter.{adapter}.{key}" for key in missing)
+        raise click.ClickException(
+            f"{adapter} needs {hints}. Set it with "
+            f"`gamebot set adapter.{adapter}.{missing[0]}=...` then "
+            f"`gamebot commit`, or pass -s.")
 
     world = report.world
     click.secho(f"{world.title or source.name}", bold=True, nl=False)
@@ -221,11 +239,9 @@ def run(source: Path, adapter: str, overrides: tuple[str, ...],
                f"serving over {adapter}")
     if check:
         click.secho("checks passed; not connecting", fg="green")
+        store.close()
         return
 
-    from gamebot.store import Store
-
-    store = Store(_db_path(db))
     engine = Engine(world, store=store)
     if engine.restored:
         click.secho("saved game refers to things this world no longer has:",
@@ -240,23 +256,27 @@ def run(source: Path, adapter: str, overrides: tuple[str, ...],
         store.close()
 
 
-def _settings(adapter, overrides: tuple[str, ...]) -> dict[str, str]:
+def _settings(adapter, overrides: tuple[str, ...], config) -> dict[str, str]:
+    """Declared default, then configuration, then environment, then -s."""
     import os
 
-    values: dict[str, str] = {}
+    values: dict[str, str] = {
+        s.key: s.default for s in adapter.settings if s.default is not None
+    }
+    values.update(config.live("adapter", adapter.name))
+
     for setting in adapter.settings:
-        if setting.default is not None:
-            values[setting.key] = setting.default
-        env = os.environ.get(
-            f"GAMEBOT_{adapter.name}_{setting.key}".upper())
+        env = os.environ.get(f"GAMEBOT_{adapter.name}_{setting.key}".upper())
         if env:
             values[setting.key] = env
 
     for pair in overrides:
         key, _, value = pair.partition("=")
         key = key.strip()
-        if key.startswith(f"{adapter.name}."):
-            key = key[len(adapter.name) + 1:]
+        for prefix in (f"adapter.{adapter.name}.", f"{adapter.name}."):
+            if key.startswith(prefix):
+                key = key[len(prefix):]
+                break
         values[key] = value.strip()
     return {k: v for k, v in values.items() if v}
 
@@ -310,3 +330,149 @@ def state(summary: str | None, history: int | None, db: Path | None) -> None:
             click.echo(entry.summary)
             if len(entries) > 1:
                 click.echo()
+
+
+# ------------------------------------------------------------ config (UCI)
+#
+# `package.section.option`, get/set/show/commit. A set stages; nothing is live
+# until commit. First-party paths: game.main.source, adapter.main.name, and
+# adapter.<name>.<key> for whatever an adapter declares.
+
+def _config(db: "Path | None"):
+    from gamebot.store import Store
+
+    return Store(_db_path(db))
+
+
+def _bad_path(exc: Exception) -> "click.ClickException":
+    return click.ClickException(f"{exc}. Use package.section.option")
+
+
+@main.command("get")
+@click.argument("path")
+@_db_option
+def get_option(path: str, db: Path | None) -> None:
+    """Read one option's live value."""
+    from gamebot.store.config import BadPath
+
+    with _config(db) as store:
+        try:
+            value = store.config.get(path)
+        except BadPath as exc:
+            raise _bad_path(exc) from exc
+    if value is None:
+        raise click.ClickException(f"{path} is not set")
+    click.echo(value)
+
+
+@main.command("set")
+@click.argument("assignments", nargs=-1, required=True, metavar="PATH=VALUE...")
+@_db_option
+def set_option(assignments: tuple[str, ...], db: Path | None) -> None:
+    """Stage one or more options. Takes `-` to read assignments from stdin.
+
+    Nothing takes effect until `gamebot commit`.
+    """
+    from gamebot.store.config import BadPath, split_assignment
+
+    lines: list[str] = []
+    for given in assignments:
+        if given == "-":
+            lines += sys.stdin.read().splitlines()
+        else:
+            lines.append(given)
+
+    staged = 0
+    with _config(db) as store:
+        for line in lines:
+            #  Tolerate the markers `show` emits, so show | set - round-trips.
+            line = line.lstrip("~- ").strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                path, value = split_assignment(line)
+                option = store.config.set(path, value)
+            except BadPath as exc:
+                raise _bad_path(exc) from exc
+            click.echo(option.show())
+            staged += 1
+    click.secho(f"{staged} staged -- run `gamebot commit` to apply", fg="yellow")
+
+
+@main.command("show")
+@click.argument("prefix", required=False)
+@_db_option
+def show_options(prefix: str | None, db: Path | None) -> None:
+    """Print configuration. A leading ~ is a staged value, - a staged removal."""
+    from gamebot.store.config import BadPath
+
+    with _config(db) as store:
+        try:
+            options = store.config.show(prefix)
+        except BadPath as exc:
+            raise _bad_path(exc) from exc
+        if not options:
+            click.echo("nothing configured" if not prefix
+                       else f"nothing matching {prefix}")
+            return
+        for option in options:
+            click.echo(option.show())
+
+
+@main.command("delete")
+@click.argument("path")
+@_db_option
+def delete_option(path: str, db: Path | None) -> None:
+    """Stage the removal of one option."""
+    from gamebot.store.config import BadPath
+
+    with _config(db) as store:
+        try:
+            existed = store.config.delete(path)
+        except BadPath as exc:
+            raise _bad_path(exc) from exc
+    if not existed:
+        raise click.ClickException(f"{path} is not set")
+    click.secho(f"{path} staged for removal -- run `gamebot commit`", fg="yellow")
+
+
+@main.command("changes")
+@click.argument("package", required=False)
+@_db_option
+def show_changes(package: str | None, db: Path | None) -> None:
+    """List staged changes awaiting a commit."""
+    with _config(db) as store:
+        pending = store.config.changes(package)
+    if not pending:
+        click.echo("no staged changes")
+        return
+    for option in pending:
+        click.echo(option.show())
+
+
+@main.command("commit")
+@click.argument("package", required=False)
+@_db_option
+def commit_options(package: str | None, db: Path | None) -> None:
+    """Apply staged changes."""
+    with _config(db) as store:
+        applied = store.config.commit(package)
+    if not applied:
+        click.echo("no staged changes")
+        return
+    for option in applied:
+        click.echo(f"{option.path}={option.effective or ''}")
+    click.secho(f"{len(applied)} committed", fg="green")
+
+
+@main.command("revert")
+@click.argument("package", required=False)
+@_db_option
+def revert_options(package: str | None, db: Path | None) -> None:
+    """Throw staged changes away."""
+    with _config(db) as store:
+        dropped = store.config.revert(package)
+    if not dropped:
+        click.echo("no staged changes")
+        return
+    click.secho(f"{len(dropped)} reverted", fg="green")

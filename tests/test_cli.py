@@ -132,3 +132,89 @@ def test_run_check_with_a_store(tmp_path):
     result = run("run", KAIROS, "--check", "-s", "discord.token=fake", "--db", db)
     assert result.exit_code == 0
     assert "checks passed" in result.output
+
+
+# ----------------------------------------------------------- config (UCI)
+
+def test_set_stages_and_commit_applies(tmp_path):
+    db = tmp_path / "gamebot.db"
+    out = run("set", "adapter.discord.token=abc", "--db", db).output
+    assert "~ adapter.discord.token='abc'" in out
+    assert "1 staged" in out
+
+    assert "adapter.discord.token" in run("changes", "--db", db).output
+    assert run("commit", "--db", db).output.count("committed") == 1
+    assert run("get", "adapter.discord.token", "--db", db).output.strip() == "abc"
+    assert "no staged changes" in run("changes", "--db", db).output
+
+
+def test_get_an_unset_option_fails(tmp_path):
+    db = tmp_path / "gamebot.db"
+    result = run("get", "adapter.discord.token", "--db", db)
+    assert result.exit_code != 0 and "is not set" in result.output
+
+
+def test_a_malformed_path_is_explained(tmp_path):
+    db = tmp_path / "gamebot.db"
+    result = run("get", "discord.token", "--db", db)
+    assert result.exit_code != 0
+    assert "package.section.option" in result.output
+
+
+def test_show_output_can_be_piped_back_into_set(tmp_path):
+    db, other = tmp_path / "a.db", tmp_path / "b.db"
+    run("set", "adapter.discord.token=abc", "adapter.discord.prefix=?", "--db", db)
+    run("commit", "--db", db)
+    shown = run("show", "--db", db).output
+
+    import click.testing
+    result = click.testing.CliRunner().invoke(
+        main, ["set", "-", "--db", str(other)], input=shown)
+    assert result.exit_code == 0
+    run("commit", "--db", other)
+    assert run("get", "adapter.discord.token", "--db", other).output.strip() == "abc"
+
+
+def test_revert_and_delete(tmp_path):
+    db = tmp_path / "gamebot.db"
+    run("set", "adapter.discord.prefix=!", "--db", db)
+    run("commit", "--db", db)
+
+    run("set", "adapter.discord.prefix=?", "--db", db)
+    assert "1 reverted" in run("revert", "--db", db).output
+    assert run("get", "adapter.discord.prefix", "--db", db).output.strip() == "!"
+
+    assert "staged for removal" in run("delete", "adapter.discord.prefix",
+                                       "--db", db).output
+    run("commit", "--db", db)
+    assert "nothing configured" in run("show", "--db", db).output
+
+
+def test_run_reads_committed_configuration(tmp_path):
+    db = tmp_path / "gamebot.db"
+    run("set", f"game.main.source={KAIROS}", "--db", db)
+    run("set", "adapter.discord.token=abc", "--db", db)
+
+    staged = run("run", "--check", "--db", db)
+    assert staged.exit_code != 0, "staged settings are not live"
+    assert "gamebot commit" in staged.output
+
+    run("commit", "--db", db)
+    committed = run("run", "--check", "--db", db)
+    assert committed.exit_code == 0, committed.output
+    assert "Kairos" in committed.output
+
+
+def test_a_flag_overrides_configuration(tmp_path):
+    db = tmp_path / "gamebot.db"
+    run("set", "adapter.main.name=nosuchadapter", "--db", db)
+    run("commit", "--db", db)
+    assert "no adapter called" in run("run", KAIROS, "--check", "--db", db).output
+    assert run("run", KAIROS, "--check", "-a", "discord",
+               "-s", "discord.token=x", "--db", db).exit_code == 0
+
+
+def test_adapters_advertises_uci_paths():
+    out = run("adapters").output
+    assert "adapter.discord.token" in out
+    assert "gamebot set adapter.<name>.<key>=<value>" in out

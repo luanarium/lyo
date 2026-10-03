@@ -247,7 +247,7 @@ def test_an_older_file_is_migrated(tmp_path):
         assert "log" not in tables
         version = store.db.execute(
             "SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
-        assert version["value"] == "3"
+        assert version["value"] == "4"
 
 
 def test_opening_an_existing_file_is_safe(tmp_path):

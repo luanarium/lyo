@@ -10,7 +10,7 @@ from pathlib import Path
 
 from gamebot.engine.state import Duel, Player, Sim
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 DEFAULT_PATH = Path("gamebot.db")
 
 
@@ -74,6 +74,20 @@ class Store:
         if "offer" in present:
             self.db.execute("DROP TABLE offer")
         self.db.execute("DELETE FROM meta WHERE key = 'clock'")
+
+        #  Schema 4 distinguishes a staged value from a staged removal.
+        columns = {row["name"] for row in
+                   self.db.execute("PRAGMA table_info(config)")}
+        if columns and "staged_op" not in columns:
+            self.db.execute("ALTER TABLE config ADD COLUMN staged_op TEXT")
+            self.db.execute(
+                "UPDATE config SET staged_op = 'set' WHERE staged IS NOT NULL")
+
+    @property
+    def config(self) -> "Config":
+        from gamebot.store.config import Config
+
+        return Config(self.db)
 
     # ------------------------------------------------------- session state
 
