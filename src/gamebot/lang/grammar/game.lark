@@ -40,14 +40,16 @@ npc_decl: "npc" STRING "as" STRING ":" _NL _INDENT npc_stmt+ _DEDENT
 npc_stmt: "says" STRING _NL                                  -> says
 
 monster_decl: "monster" STRING ":" _NL _INDENT monster_stmt+ _DEDENT
-monster_stmt: quantity_list _NL                              -> stats
+monster_stmt: STRING _NL                                     -> description
+            | quantity_list _NL                              -> stats
             | "drops" range? (NAME | STRING) chance? _NL     -> drop
 
 item_decl: "item" STRING "is" item_kind ":" _NL _INDENT item_stmt+ _DEDENT
 item_kind: "the" "default" kind_name                         -> default_kind
          | ["a" | "an"] kind_name                            -> kind
 kind_name: NAME NAME?
-item_stmt: quantity_list _NL                                 -> attrs
+item_stmt: STRING _NL                                        -> description
+         | quantity_list _NL                                 -> attrs
          | "costs" quantity _NL                              -> costs
          | "grants" quantity_list _NL                        -> grants
          | "also" "known" "as" string_list _NL               -> aliases
@@ -95,6 +97,7 @@ shop_stmt: "stocks" string_list _NL                          -> stocks
 handler: "on" NAME NAME? ":" _NL _INDENT stmt+ _DEDENT
 
 stmt: visibility
+    | "also" "known" "as" string_list _NL                     -> aliases
     | guard
     | ask_stmt
     | duel_stmt
@@ -113,8 +116,8 @@ req_list: expr ("," expr)*
 action: _DEAL expr "to" ref _NL                              -> deal
       | "restore" amount_list _NL                            -> restore
       | "heal" expr _NL                                      -> heal
-      | "give" quantity "to" ref _NL                          -> give
-      | "take" quantity "from" ref _NL                        -> take
+      | "give" amount "to" ref _NL                            -> give
+      | "take" amount "from" ref _NL                          -> take
       | "move" ref "to" ref _NL                              -> move
       | "equip" ref _NL                                      -> equip
       | "roll" NAME "in" ref _NL                             -> roll
@@ -123,13 +126,14 @@ action: _DEAL expr "to" ref _NL                              -> deal
       | "say" STRING ("publicly" | "privately")? _NL         -> say
       | "show" NAME _NL                                      -> show
       | "create" "player" "named" NAME "as" NAME _NL         -> create_player
-      | "trigger" NAME _NL                                   -> trigger
+      | "trigger" NAME ["on" ref] _NL                        -> trigger
       | "buy" ref _NL                                        -> buy
       | "stop" _NL                                           -> stop
 
 loop_stmt: "loop" ":" _NL _INDENT stmt+ _DEDENT
 each_stmt: "for" "every" selector ":" _NL _INDENT stmt+ _DEDENT
-selector: ["living"] NAME ["here"]
+selector: qualifier* NAME ["here"]
+!qualifier: "living" | "other" | "fallen"
 
 ask_stmt: "ask" NAME ":" STRING? _NL _INDENT ask_opt+ _DEDENT
 ask_opt: "accepts" accept_spec _NL                           -> accepts
@@ -174,6 +178,7 @@ clamp_op: "at" "least" atom                                  -> at_least
      | "all" NAME                                            -> all_of
      | "its" path                                            -> its
      | QUANTIFIER path                                       -> quantified
+     | "any" selector                                        -> any_matching
      | path
      | NAME "(" expr ("," expr)* ")"                         -> call
      | "(" expr ")"
