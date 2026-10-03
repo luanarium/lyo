@@ -184,10 +184,12 @@ def adapters() -> None:
               help="Which bot adapter to run.")
 @click.option("--set", "-s", "overrides", multiple=True, metavar="KEY=VALUE",
               help="A setting, in UCI shape: -s discord.token=...")
+@click.option("--db", type=click.Path(path_type=Path), default=None,
+              help="The project's sqlite3 file. Defaults to gamebot.db.")
 @click.option("--check", is_flag=True,
               help="Validate the source and the settings, then stop.")
 def run(source: Path, adapter: str, overrides: tuple[str, ...],
-        check: bool) -> None:
+        db: Path | None, check: bool) -> None:
     """Serve a game to a chat platform.
 
     Settings may also come from the environment, as GAMEBOT_<ADAPTER>_<KEY>.
@@ -221,8 +223,21 @@ def run(source: Path, adapter: str, overrides: tuple[str, ...],
         click.secho("checks passed; not connecting", fg="green")
         return
 
-    engine = Engine(world)
-    chosen.run(engine, values, str(source))
+    from gamebot.store import Store
+
+    store = Store(_db_path(db))
+    engine = Engine(world, store=store)
+    if engine.restored:
+        click.secho("saved game refers to things this world no longer has:",
+                    fg="yellow")
+        for missing in engine.restored:
+            click.echo(f"  {missing}")
+    click.echo(f"{store.path}: {store.characters()} character(s) restored")
+    try:
+        chosen.run(engine, values, str(source))
+    finally:
+        store.save(engine.sim)
+        store.close()
 
 
 def _settings(adapter, overrides: tuple[str, ...]) -> dict[str, str]:
@@ -244,3 +259,105 @@ def _settings(adapter, overrides: tuple[str, ...]) -> dict[str, str]:
             key = key[len(adapter.name) + 1:]
         values[key] = value.strip()
     return {k: v for k, v in values.items() if v}
+
+
+# --------------------------------------------------------------- the file
+
+def _db_path(given: "Path | None") -> "Path":
+    import os
+
+    from gamebot.store import DEFAULT_PATH
+
+    return given or Path(os.environ.get("GAMEBOT_DB") or DEFAULT_PATH)
+
+
+_db_option = click.option(
+    "--db", type=click.Path(path_type=Path), default=None,
+    help="The project's sqlite3 file. Defaults to gamebot.db, or $GAMEBOT_DB.")
+
+
+# ------------------------------------------------------------------- log
+
+@main.command()
+@click.argument("channel", required=False)
+@click.option("-n", "--limit", default=20, show_default=True,
+              help="How many entries to show.")
+@click.option("--subject", help="Only entries about this subject.")
+@click.option("--since", help="Only entries at or after this timestamp.")
+@_db_option
+def log(channel: str | None, limit: int, subject: str | None,
+        since: str | None, db: Path | None) -> None:
+    """Query the project's logs: event, session or discard.
+
+    With no channel, shows every stream. With no entries at all, lists which
+    channels hold what.
+    """
+    from gamebot.store import Store
+
+    path = _db_path(db)
+    if not path.exists():
+        raise click.ClickException(f"no such file: {path}")
+
+    with Store(path) as store:
+        entries = store.entries(channel, limit=limit, subject=subject,
+                                since=since)
+        if not entries:
+            held = store.channels()
+            if not held:
+                click.echo("nothing logged yet")
+                return
+            click.echo("no matching entries. Channels held:")
+            for name, count in held:
+                click.echo(f"  {name} ({count})")
+            return
+
+        for entry in reversed(entries):
+            click.secho(entry.at, fg="bright_black", nl=False)
+            click.secho(f"  {entry.channel:<8}", fg="cyan", nl=False)
+            if entry.subject:
+                click.secho(f"{entry.subject} ", bold=True, nl=False)
+            click.echo(entry.message)
+            for key, value in entry.data.items():
+                if key != "kind":
+                    click.secho(f"    {key}: {value}", fg="bright_black")
+
+
+# --------------------------------------------------------------- discard
+
+@main.command()
+@click.argument("what")
+@click.option("--why", required=True, help="Why it was dropped.")
+@_db_option
+def discard(what: str, why: str, db: Path | None) -> None:
+    """Record something considered and dropped, as the briefs evolve."""
+    from gamebot.store import DISCARD, Store
+
+    with Store(_db_path(db)) as store:
+        store.log(DISCARD, why, subject=what)
+    click.secho(f"discarded: {what}", fg="green")
+
+
+# ----------------------------------------------------------------- state
+
+@main.command()
+@click.argument("note", required=False)
+@_db_option
+def state(note: str | None, db: Path | None) -> None:
+    """Show the latest session state, or save a new one."""
+    from gamebot.store import SESSION, Store
+
+    path = _db_path(db)
+    if note is None and not path.exists():
+        raise click.ClickException(f"no such file: {path}")
+
+    with Store(path) as store:
+        if note is not None:
+            store.log(SESSION, note)
+            click.secho("saved", fg="green")
+            return
+        latest = store.latest(SESSION)
+        if latest is None:
+            click.echo("no session state saved yet")
+            return
+        click.secho(latest.at, fg="bright_black")
+        click.echo(latest.message)

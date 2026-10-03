@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from lark import Tree
@@ -16,6 +17,14 @@ class Ref:
     column: int
 
 
+def slug(text: str) -> str:
+    """A stable identifier derived from a display name."""
+    #  Drop apostrophes rather than treating them as separators, so
+    #  "Dragon's Heart" is dragons_heart and not dragon_s_heart.
+    bare = re.sub(r"['’]", "", text.casefold())
+    return re.sub(r"[^a-z0-9]+", "_", bare).strip("_") or "unnamed"
+
+
 @dataclass
 class Decl:
     """Common head of every declaration."""
@@ -24,6 +33,16 @@ class Decl:
     line: int
     column: int
     tree: Tree | None = None
+    id: str = ""
+    """Stable identity for saved games. Defaults to a slug of the name.
+
+    A save refers to this, never to the display name, so renaming an item or a
+    location does not orphan the characters holding or standing in it.
+    """
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            self.id = slug(self.name)
 
 
 @dataclass

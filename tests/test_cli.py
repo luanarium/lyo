@@ -89,3 +89,48 @@ def test_tangle_rejects_a_document_with_no_blocks(tmp_path):
     result = run("tangle", empty)
     assert result.exit_code != 0
     assert "no `game` code blocks" in result.output
+
+
+# ------------------------------------------------------------ the store
+
+def test_log_reports_when_there_is_no_file(tmp_path):
+    result = run("log", "--db", tmp_path / "missing.db")
+    assert result.exit_code != 0
+    assert "no such file" in result.output
+
+
+def test_discard_then_query_it(tmp_path):
+    db = tmp_path / "gamebot.db"
+    assert run("discard", "Evennia", "--why", "too many dependencies",
+               "--db", db).exit_code == 0
+    out = run("log", "discard", "--db", db).output
+    assert "Evennia" in out and "too many dependencies" in out
+
+
+def test_state_saves_and_shows(tmp_path):
+    db = tmp_path / "gamebot.db"
+    assert run("state", "focus: the store", "--db", db).exit_code == 0
+    out = run("state", "--db", db).output
+    assert "focus: the store" in out
+
+
+def test_log_lists_channels_when_nothing_matches(tmp_path):
+    db = tmp_path / "gamebot.db"
+    run("discard", "X", "--why", "y", "--db", db)
+    out = run("log", "nosuchchannel", "--db", db).output
+    assert "Channels held" in out and "discard (1)" in out
+
+
+def test_run_check_reports_restored_characters(tmp_path, world_file=None):
+    db = tmp_path / "gamebot.db"
+    from gamebot.engine import Engine
+    from gamebot.lang.check import check as check_source
+    from gamebot.store import Store
+
+    with Store(db) as store:
+        engine = Engine(check_source(KAIROS).world, store=store)
+        engine.register("1", "Brynn", "Warrior")
+
+    result = run("run", KAIROS, "--check", "-s", "discord.token=fake", "--db", db)
+    assert result.exit_code == 0
+    assert "checks passed" in result.output

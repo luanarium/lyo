@@ -186,7 +186,9 @@ class _Resolver:
         loc = Location(name=name, line=node.meta.line, column=node.meta.column, tree=node)
         for stmt in node.children[1:]:
             stmt = _unwrap(stmt)
-            if stmt.data == "description":
+            if stmt.data == "identifier":
+                loc.id = str(stmt.children[0])
+            elif stmt.data == "description":
                 loc.description = _text(stmt.children[0])
             elif stmt.data == "features":
                 loc.features = {str(t) for t in stmt.children[0].children}
@@ -208,7 +210,9 @@ class _Resolver:
         mon = Monster(name=name, line=node.meta.line, column=node.meta.column, tree=node)
         for stmt in node.children[1:]:
             stmt = _unwrap(stmt)
-            if stmt.data == "description":
+            if stmt.data == "identifier":
+                mon.id = str(stmt.children[0])
+            elif stmt.data == "description":
                 mon.description = _text(stmt.children[0])
             elif stmt.data == "stats":
                 mon.stats = {u: a for a, u, _ in _quantities(stmt)}
@@ -239,7 +243,9 @@ class _Resolver:
                     kind=kind_name, is_default=kind_tree.data == "default_kind")
         for stmt in node.children[2:]:
             stmt = _unwrap(stmt)
-            if stmt.data == "description":
+            if stmt.data == "identifier":
+                item.id = str(stmt.children[0])
+            elif stmt.data == "description":
                 item.description = _text(stmt.children[0])
             elif stmt.data == "attrs":
                 for amount, unit, scaling in _quantities(stmt):
@@ -263,7 +269,9 @@ class _Resolver:
         cls = CharClass(name=name, line=node.meta.line, column=node.meta.column, tree=node)
         for stmt in node.children[1:]:
             stmt = _unwrap(stmt)
-            if stmt.data == "description":
+            if stmt.data == "identifier":
+                cls.id = str(stmt.children[0])
+            elif stmt.data == "description":
                 cls.description = _text(stmt.children[0])
             elif stmt.data == "stats":
                 cls.stats = {u: a for a, u, _ in _quantities(stmt)}
@@ -404,6 +412,7 @@ class _Resolver:
 
     def validate(self) -> None:
         w = self.world
+        self._validate_ids()
         self._validate_start()
         self._validate_exits()
         self._validate_spawns_and_drops()
@@ -415,6 +424,22 @@ class _Resolver:
         self._validate_orphans()
         self._validate_placeholders()
         self._validate_aliases()
+
+    def _validate_ids(self) -> None:
+        """A save keys on these, so a collision would merge two things."""
+        for kind, table in (("location", self.world.locations),
+                            ("monster", self.world.monsters),
+                            ("item", self.world.items),
+                            ("class", self.world.classes)):
+            claimed: dict[str, str] = {}
+            for decl in table.values():
+                owner = claimed.get(decl.id)
+                if owner is not None:
+                    self.error("id-clash",
+                               f'{kind} id `{decl.id}` is used by both "{owner}" '
+                               f'and "{decl.name}" -- give one an explicit `id`',
+                               decl.tree)
+                claimed[decl.id] = decl.name
 
     def _validate_start(self) -> None:
         if self.world.start_at is None:

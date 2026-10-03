@@ -30,7 +30,8 @@ game_decl: "game" STRING ":" _NL _INDENT game_stmt+ _DEDENT
 game_stmt: "players" "start" "at" STRING "with" amount_list _NL -> players_start
 
 location_decl: "location" STRING ":" _NL _INDENT location_stmt+ _DEDENT
-location_stmt: STRING _NL                                    -> description
+location_stmt: "id" NAME _NL                                 -> identifier
+             | STRING _NL                                    -> description
              | "has" name_list _NL                           -> features
              | "spawns" string_list _NL                      -> spawns
              | [ONE_WAY] NAME "to" STRING _NL                 -> exit
@@ -40,7 +41,8 @@ npc_decl: "npc" STRING "as" STRING ":" _NL _INDENT npc_stmt+ _DEDENT
 npc_stmt: "says" STRING _NL                                  -> says
 
 monster_decl: "monster" STRING ":" _NL _INDENT monster_stmt+ _DEDENT
-monster_stmt: STRING _NL                                     -> description
+monster_stmt: "id" NAME _NL                                  -> identifier
+            | STRING _NL                                     -> description
             | quantity_list _NL                              -> stats
             | "drops" range? (NAME | STRING) chance? _NL     -> drop
 
@@ -48,7 +50,8 @@ item_decl: "item" STRING "is" item_kind ":" _NL _INDENT item_stmt+ _DEDENT
 item_kind: "the" "default" kind_name                         -> default_kind
          | ["a" | "an"] kind_name                            -> kind
 kind_name: NAME NAME?
-item_stmt: STRING _NL                                        -> description
+item_stmt: "id" NAME _NL                                     -> identifier
+         | STRING _NL                                        -> description
          | quantity_list _NL                                 -> attrs
          | "costs" quantity _NL                              -> costs
          | "grants" quantity_list _NL                        -> grants
@@ -56,7 +59,8 @@ item_stmt: STRING _NL                                        -> description
          | handler
 
 class_decl: "class" STRING ":" _NL _INDENT class_stmt+ _DEDENT
-class_stmt: STRING _NL                                       -> description
+class_stmt: "id" NAME _NL                                    -> identifier
+          | STRING _NL                                       -> description
           | quantity_list _NL                                -> stats
           | "starts" "with" kit_list _NL                     -> starts_equipped
           | "starts" "carrying" kit_list _NL                  -> starts_carried
