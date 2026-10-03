@@ -36,6 +36,13 @@ class Adapter:
     summary: str
     run: Callable[..., Any]
     settings: tuple[Setting, ...] = ()
+    setup: str = ""
+    """Markdown describing what the platform needs before this will work.
+
+    The engine knows nothing about gateway intents or OAuth scopes, so an
+    adapter states its own prerequisites here and the documentation and
+    `lyo adapters --setup` render them.
+    """
 
 
 class Specs:

@@ -31,6 +31,39 @@ EMOJI = {
 _NUMBER = re.compile(r"(?<![\w*])(\d+)(?![\w*])")
 
 
+SETUP = """Before this adapter will work, Discord needs three things done in
+the [developer portal](https://discord.com/developers/applications).
+
+1. **Create an application**, then under **Bot** use *Reset Token* to get a
+   token. That is `adapter.discord.token`.
+
+2. **Enable the Message Content Intent**, under **Bot → Privileged Gateway
+   Intents**. Without it the bot connects but never sees a command, because
+   Discord sends empty message content. This adapter requests the intent, so
+   discord.py will refuse to connect until the portal grants it.
+
+3. **Invite the bot**, under **OAuth2 → URL Generator**, with the `bot` scope
+   and these permissions:
+
+   | Permission | Why |
+   |---|---|
+   | Send Messages | everything |
+   | Read Message History | reading commands in a channel |
+   | Manage Messages | deleting the "check your DMs" notice after a few seconds |
+
+   Only the first two are required. Without *Manage Messages* the notice simply
+   stays in the channel.
+
+For `adapter.discord.owner`, which enables `!reload` in chat: turn on
+**Developer Mode** in Discord's own settings under *Advanced*, then right-click
+your name and *Copy User ID*.
+
+Players need their direct messages open for private output such as `!inventory`
+and `!register`. If they are closed, the adapter posts in the channel instead,
+except for `!shop`, which points them at `!buy` instead.
+"""
+
+
 @hookimpl
 def lyo_adapter() -> Adapter:
     return Adapter(
@@ -38,6 +71,7 @@ def lyo_adapter() -> Adapter:
         summary="Play in Discord channels and DMs via discord.py.",
         run=run,
         settings=SETTINGS,
+        setup=SETUP,
     )
 
 

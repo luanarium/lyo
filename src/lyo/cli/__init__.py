@@ -160,7 +160,9 @@ if __name__ == "__main__":
 # --------------------------------------------------------------- adapters
 
 @main.command()
-def adapters() -> None:
+@click.option("--setup", "show_setup", is_flag=True,
+              help="Also print what each platform needs set up first.")
+def adapters(show_setup: bool) -> None:
     """List the bot adapters this installation can run."""
     found = plugins.adapters()
     if not found:
@@ -173,6 +175,11 @@ def adapters() -> None:
             note = " (required)" if setting.required else (
                 f" [{setting.default}]" if setting.default else "")
             click.echo(f"    adapter.{name}.{setting.key}{note} -- {setting.help}")
+        if show_setup and adapter.setup:
+            click.echo()
+            for line in adapter.setup.rstrip().splitlines():
+                click.echo(f"    {line}")
+            click.echo()
     click.echo()
     click.echo("Set these with: lyo set adapter.<name>.<key>=<value>, "
                "then lyo commit")

@@ -45,6 +45,11 @@ lyo run world/kairos.md                        # serve the example game
 Then in Discord: `!register` to make a character, `!look` to see where you are,
 `!attack wolf` to start a fight.
 
+Discord needs a little setup first — an application, a token, and the **Message
+Content Intent**, without which the bot connects but never sees a command.
+`lyo adapters --setup` prints the steps, and so does
+[docs/platforms.md](docs/platforms.md).
+
 ## Check a game before serving it
 
 ```bash
@@ -124,6 +129,45 @@ with the `discord` extra, and nothing in the core imports it.
 
 Linux and Windows are both supported, including running as a service.
 """
+
+
+# --------------------------------------------------------------- platforms
+
+
+def platforms() -> str:
+    """One section per installed adapter, from what it declares about itself."""
+    installed = sorted(adapters().items())
+    if not installed:
+        return ("# Platforms\n\nNo adapters are installed. "
+                "`uv sync --extra discord` installs the first-party one.\n")
+
+    parts = ["# Platforms", "", "What each installed adapter needs before it "
+             "will work. The engine knows none of this — an adapter declares "
+             "its own prerequisites, so this page grows when you install "
+             "another one.", ""]
+    for name, adapter in installed:
+        parts += [f"## {name}", "", adapter.summary, ""]
+        parts += [adapter.setup.rstrip() if adapter.setup
+                  else "_This adapter declares no setup steps._", ""]
+        rows = [f"| `adapter.{name}.{s.key}` | "
+                f"{'required' if s.required else (f'default `{s.default}`' if s.default else 'optional')} "
+                f"| {s.help} |" for s in adapter.settings]
+        if rows:
+            parts += ["### Settings", "",
+                      "| Option | | Means |", "|---|---|---|", *rows, ""]
+        parts += [f"```bash", f"lyo set adapter.main.name={name}",
+                  *[f"lyo set adapter.{name}.{s.key}=..." for s in adapter.settings
+                    if s.required],
+                  "lyo commit", "lyo run", "```", ""]
+
+    parts += ["## Terms", "", terms([
+        ("adapter", "A plugin connecting the engine to one chat platform"),
+        ("intent", "A Discord permission to receive a category of event"),
+        ("gateway", "Discord's websocket connection, which a bot holds open"),
+        ("OAuth scope", "What an invite link grants the bot"),
+        ("token", "The bot's credential. It lives in configuration, not in a file you ship"),
+    ])]
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------- language
@@ -642,6 +686,9 @@ DOCUMENTS = (
               "src/lyo/lang/resolve.py", "src/lyo/engine/execute.py")),
     Document("docs/cartridge.md", "One file, two forms", cartridge,
              ("src/lyo/cartridge/png.py", "src/lyo/cartridge/markdown.py")),
+    Document("docs/platforms.md", "Platforms", platforms,
+             ("src/lyo/adapters/discord/__init__.py",
+              "src/lyo/plugins/__init__.py")),
     Document("docs/adapters.md", "Writing an adapter", adapter_guide,
              ("src/lyo/plugins/__init__.py",
               "src/lyo/adapters/discord/__init__.py")),
