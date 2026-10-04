@@ -22,6 +22,35 @@ LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 MAX_BODY = 64 * 1024
 
 
+class Unavailable(Exception):
+    """The address could not be bound."""
+
+    def __init__(self, host: str, port: int, cause: OSError) -> None:
+        self.host, self.port, self.cause = host, port, cause
+        import errno
+
+        if cause.errno == errno.EADDRINUSE:
+            detail = (f"something is already listening on {host}:{port}. "
+                      f"Stop it, or choose another port: "
+                      f"`lyo run -a webui -s webui.port={port + 1}`")
+        elif cause.errno in (errno.EACCES, errno.EPERM):
+            detail = (f"not permitted to bind {host}:{port}. Ports below 1024 "
+                      f"need privileges; pick a higher one.")
+        elif cause.errno == errno.EADDRNOTAVAIL:
+            detail = (f"no interface on this machine has the address {host}. "
+                      f"Check `adapter.webui.host`.")
+        elif cause.errno is None:
+            #  asyncio collapses a multi-address failure into one OSError with
+            #  no errno and the candidate list as its message, so the real
+            #  reason is gone. Name the two that are plausible.
+            detail = (f"could not bind {host}:{port}. Either no interface on "
+                      f"this machine has that address, or the port needs "
+                      f"privileges. Check `adapter.webui.host`.")
+        else:
+            detail = f"could not bind {host}:{port}: {cause.strerror or cause}"
+        super().__init__(detail)
+
+
 @dataclass
 class Request:
     method: str
@@ -167,9 +196,16 @@ class Server:
         return secrets.compare_digest(offered, self.token)
 
     async def listen(self) -> int:
-        """Bind, and report the port actually taken. 0 means let the OS pick."""
-        self._server = await asyncio.start_server(
-            self._client, self.host, self.port)
+        """Bind, and report the port actually taken. 0 means let the OS pick.
+
+        A busy port is an ordinary thing to hit, so it is reported as a
+        sentence rather than a stack trace.
+        """
+        try:
+            self._server = await asyncio.start_server(
+                self._client, self.host, self.port)
+        except OSError as exc:
+            raise Unavailable(self.host, self.port, exc) from None
         chosen = self._server.sockets[0].getsockname()
         self.port = chosen[1] if isinstance(chosen, tuple) else self.port
         return self.port

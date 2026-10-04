@@ -22,7 +22,8 @@ import contextlib
 import secrets
 from typing import Any
 
-from lyo.adapters.webui.http import Request, Response, Server, event
+from lyo.adapters.webui.http import (Request, Response, Server,
+                                     Unavailable, event)
 from lyo.adapters.webui.session import Line, Session
 from lyo.engine import Engine
 from lyo.plugins import Adapter, Setting, hookimpl
@@ -250,5 +251,9 @@ def run(engine: Engine, values: dict[str, str], source: str | None = None,
             for factory in services:
                 group.create_task(factory())
 
-    with contextlib.suppress(KeyboardInterrupt):
+    try:
         asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    except Unavailable as exc:
+        raise SystemExit(f"lyo: {exc}") from None

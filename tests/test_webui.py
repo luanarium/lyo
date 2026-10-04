@@ -349,3 +349,49 @@ def test_the_whole_surface_over_a_real_socket(world, tmp_path):
 
         asyncio.run(scenario())
         assert store.characters() == 1, "the persistent session saved"
+
+
+def test_a_busy_port_is_a_sentence_not_a_stack_trace(world):
+    """Hitting a taken port is ordinary; it should read like a message."""
+    import errno
+    import socket
+
+    from lyo.adapters.webui.http import Unavailable
+
+    held = socket.socket()
+    held.bind(("127.0.0.1", 0))
+    held.listen(1)
+    port = held.getsockname()[1]
+    try:
+        async def go():
+            await Server("127.0.0.1", port).listen()
+
+        with pytest.raises(Unavailable) as caught:
+            asyncio.run(go())
+    finally:
+        held.close()
+
+    message = str(caught.value)
+    assert "already listening" in message
+    assert f"webui.port={port + 1}" in message, "it suggests a way out"
+    assert caught.value.cause.errno == errno.EADDRINUSE
+
+
+def test_an_address_not_on_this_machine_is_explained():
+    """asyncio loses the errno here, so the message must still be useful."""
+    from lyo.adapters.webui.http import Unavailable
+
+    with pytest.raises(Unavailable) as caught:
+        asyncio.run(Server("203.0.113.1", 9999).listen())
+
+    message = str(caught.value)
+    assert "adapter.webui.host" in message
+    assert "no interface" in message
+    assert "out of [(" not in message, "asyncio's candidate list is noise"
+
+
+def test_a_privileged_port_is_explained():
+    from lyo.adapters.webui.http import Unavailable
+
+    with pytest.raises(Unavailable, match="privileges"):
+        asyncio.run(Server("127.0.0.1", 80).listen())
