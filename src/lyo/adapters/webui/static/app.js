@@ -52,6 +52,17 @@ function paint(line, mine) {
   const wrapped = classes.length
     ? `<span class="${classes.join(" ")}">${body}</span>` : body;
   state.chat.messageAddNew(wrapped, "", "left", "assistant");
+  follow();
+}
+
+//  quikchat scrolls on its own, but a removed typing indicator changes the
+//  height after it has done so. Nudge it again, and only when the reader is
+//  already at the bottom -- scrolling up to reread should stay put.
+function follow() {
+  if (!state.chat || state.chat.userScrolledUp) return;
+  requestAnimationFrame(() => {
+    try { state.chat.scrollToBottom(); } catch {}
+  });
 }
 
 // Output is paced so a turn reads instead of landing all at once. One queue,
@@ -101,6 +112,7 @@ const escapeHtml = (text) =>
 function say(text) {
   if (!state.chat) return;
   state.chat.messageAddNew(escapeHtml(text), "", "right", "user");
+  follow();
 }
 
 // ------------------------------------------------------------------ sending

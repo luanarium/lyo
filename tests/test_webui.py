@@ -583,3 +583,33 @@ def test_the_identity_field_is_filled_once_and_then_left_alone():
 def test_the_session_select_opens_on_ephemeral():
     page = (PAGE / "index.html").read_text()
     assert '<option value="ephemeral" selected>' in page
+
+
+# ------------------------------------------------------- the scrolling chain
+
+def test_the_chat_pane_gets_a_definite_height():
+    """quikchat's root is height:100% with overflow:hidden. Without a definite
+    height from its container it grows with content and clips, so a new line
+    lands below the visible area instead of scrolling into view."""
+    style = (PAGE / "app.css").read_text()
+    main = style[style.index("main {"):style.index("#chat {")]
+    assert "grid-template-rows: minmax(0, 1fr)" in main
+    assert "min-height: 0" in main
+
+    chat = style[style.index("#chat {"):style.index("aside {")]
+    assert "height: 100%" in chat
+    assert "overflow: hidden" in chat
+
+    body = style[style.index("body {"):style.index("header {")]
+    assert "height: 100vh" in body, "the chain needs a definite root"
+
+
+def test_a_new_line_scrolls_into_view_without_fighting_the_reader():
+    script = (PAGE / "app.js").read_text()
+    follow = script[script.index("function follow()"):
+                    script.index("//  Output is paced")
+                    if "//  Output is paced" in script else len(script)]
+    assert "userScrolledUp" in follow, "scrolling up to reread stays put"
+    assert "scrollToBottom" in follow
+    #  both the player's own line and anything incoming
+    assert script.count("follow();") >= 2

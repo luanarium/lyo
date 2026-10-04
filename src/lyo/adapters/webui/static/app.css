@@ -16,7 +16,9 @@
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
-  display: flex; flex-direction: column; height: 100vh;
+  display: flex; flex-direction: column;
+  height: 100vh;
+  height: 100dvh;   /* mobile browsers, where 100vh is taller than the window */
 }
 header {
   border-bottom: 1px solid var(--edge); background: var(--panel);
@@ -43,9 +45,17 @@ button:hover { filter: brightness(1.1); }
 main {
   flex: 1; min-height: 0; width: 100%; max-width: var(--wide);
   margin: 0 auto; display: grid; grid-template-columns: 1fr 240px;
+  /* An explicit row, so the children get a definite height rather than one
+     that grows with content. quikchat's root is height:100% with
+     overflow:hidden, so without this it clips instead of scrolling. */
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
   border-left: 1px solid var(--edge); border-right: 1px solid var(--edge);
 }
-#chat { min-height: 0; border-right: 1px solid var(--edge); }
+#chat {
+  min-height: 0; height: 100%; overflow: hidden;
+  border-right: 1px solid var(--edge);
+}
 aside { padding: 14px 16px; overflow-y: auto; background: var(--panel); }
 h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
      color: var(--dim); margin: 0 0 6px; }
@@ -81,7 +91,11 @@ pre { background: var(--panel); padding: 10px; border-radius: 6px;
 .quikchat-message-content em { color: var(--dim); }
 .quikchat-message-content strong { font-weight: 650; }
 @media (max-width: 760px) {
-  main { grid-template-columns: 1fr; border-left: 0; border-right: 0; }
+  main {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+    border-left: 0; border-right: 0;
+  }
   #chat { border-right: 0; border-bottom: 1px solid var(--edge); }
   aside { max-height: 38vh; }
 }
