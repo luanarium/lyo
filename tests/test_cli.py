@@ -282,3 +282,36 @@ def test_service_uninstall_of_an_absent_unit_is_not_an_error(tmp_path):
     result = run("service", "uninstall", "--name", "nothing-here",
                  "--db", tmp_path / "lyo.db")
     assert result.exit_code == 0
+
+
+def test_pack_reports_the_cover_shape(tmp_path):
+    out = tmp_path / "k.png"
+    result = run("pack", KAIROS, "-o", out)
+    assert result.exit_code == 0
+    assert "label 630x500" in result.output
+    assert "5:4 cover shape" in result.output
+
+
+def test_pack_says_when_art_will_letterbox(tmp_path):
+    import struct
+    import zlib
+
+    from lyo.cartridge.png import SIGNATURE
+
+    width = height = 64
+    raw = b"".join(b"\x00" + bytes((9, 9, 9)) * width for _ in range(height))
+
+    def chunk(kind, data):
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+    art = tmp_path / "square.png"
+    art.write_bytes(
+        SIGNATURE
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+
+    result = run("pack", KAIROS, "--image", art, "-o", tmp_path / "k.png")
+    assert result.exit_code == 0
+    assert "label 64x64" in result.output
+    assert "letterboxes" in result.output

@@ -411,6 +411,24 @@ tools write there.
 Reading and writing needs no imaging library — the chunk format is a length, a
 type, the data and a CRC, all of which the standard library can do.
 
+### The cover
+
+Covers are **630×500**, which is itch.io's cover size rather than anything
+invented here, and so the shape game covers are usually drawn in. `lyo pack`
+without `--image` draws a plain one at that size, marked as a placeholder so
+anything showing covers can draw something better than a blank rectangle.
+
+Nothing is enforced. `--image` keeps the art it is given byte for byte,
+whatever its dimensions: resizing it would mean decoding and re-encoding
+somebody's picture, which costs an imaging library and loses the original.
+Art of another shape is **letterboxed where it is displayed** instead, so none
+of it is ever cropped. `lyo pack` reports the shape it found:
+
+```
+kairos.png: 6,789 bytes, carrying 14,125 of source
+  label 630x500  (the 5:4 cover shape)
+```
+
 ## What a cartridge is not
 
 **Not re-encoding-proof.** Ancillary chunks are stripped by anything that

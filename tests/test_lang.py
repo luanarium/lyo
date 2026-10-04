@@ -191,3 +191,45 @@ def test_unrelated_text_metadata_is_ignored(tmp_path):
 
     markdown = (WORLD / "kairos.md").read_text()
     assert png_mod.unpack(png_mod.pack(carrying, markdown)) == markdown
+
+
+def test_the_cover_convention_is_the_default_label_size():
+    """630x500 is itch.io's cover size, not one invented here."""
+    assert png_mod.COVER == (630, 500)
+    assert png_mod.dimensions(png_mod.blank()) == png_mod.COVER
+
+    markdown = (WORLD / "kairos.md").read_text()
+    packed = png_mod.pack(png_mod.blank(), markdown)
+    assert png_mod.dimensions(packed) == png_mod.COVER, "packing keeps the label"
+
+
+def test_dimensions_needs_no_decoding_and_tolerates_rubbish():
+    assert png_mod.dimensions(png_mod.blank(123, 45)) == (123, 45)
+    assert png_mod.dimensions(b"not a png") is None
+    assert png_mod.dimensions(b"") is None
+
+
+def test_art_of_any_shape_is_kept_byte_for_byte():
+    """Resizing would need an imaging library and lose the original."""
+    import struct
+    import zlib
+
+    width, height = 240, 240
+    raw = b"".join(b"\x00" + bytes((200, 40, 90)) * width for _ in range(height))
+
+    def chunk(kind, data):
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+    art = (png_mod.SIGNATURE
+           + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+
+    markdown = (WORLD / "kairos.md").read_text()
+    packed = png_mod.pack(art, markdown)
+    assert png_mod.dimensions(packed) == (240, 240), "not resized to the cover"
+    #  the image data is the same bytes, so the picture is untouched
+    original = [d for _, k, d in png_mod._walk(art) if k == b"IDAT"]
+    carried = [d for _, k, d in png_mod._walk(packed) if k == b"IDAT"]
+    assert original == carried
+    assert png_mod.unpack(packed) == markdown

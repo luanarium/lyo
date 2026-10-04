@@ -132,6 +132,7 @@ def pack(source: Path, output: Path | None, image: Path | None) -> None:
     data = cartridge.pack(label, markdown)
     output.write_bytes(data)
     click.echo(f"{output}: {len(data):,} bytes, carrying {len(markdown):,} of source")
+    _report_label(data)
 
 
 # --------------------------------------------------------------- unpack
@@ -293,6 +294,31 @@ def _settings(adapter, overrides: tuple[str, ...], config) -> dict[str, str]:
 
 
 # --------------------------------------------------------------- the file
+
+def _report_label(data: bytes) -> None:
+    """Say what shape the cover is, and when it will letterbox.
+
+    Reading IHDR needs no decoding, so this costs nothing and `pack` never
+    touches the art it was given.
+    """
+    size = cartridge.dimensions(data)
+    if size is None:
+        return
+    width, height = size
+    click.secho(f"  label {width}x{height}", fg="bright_black", nl=False)
+
+    wanted = cartridge.COVER[0] / cartridge.COVER[1]
+    if not height:
+        click.echo()
+        return
+    ratio = width / height
+    if abs(ratio - wanted) / wanted <= 0.15:
+        click.secho("  (the 5:4 cover shape)", fg="bright_black")
+    else:
+        click.secho(f"  (covers are shown at "
+                    f"{cartridge.COVER[0]}x{cartridge.COVER[1]}, so this one "
+                    f"letterboxes)", fg="bright_black")
+
 
 def _db_path(given: "Path | None") -> "Path":
     import os

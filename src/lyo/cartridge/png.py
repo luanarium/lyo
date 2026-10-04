@@ -22,6 +22,12 @@ MAGIC = b"GBC1"
 #  square; the mark is copied into any cartridge packed onto it.
 LABEL = b"lyo-label"
 PLACEHOLDER = b"placeholder"
+
+#  The cover convention, borrowed from itch.io rather than invented: 630x500,
+#  which is the shape people already draw game covers in. Nothing enforces it
+#  -- `pack` keeps whatever art it is given, byte for byte -- but a cover that
+#  matches it is shown without letterboxing.
+COVER = (630, 500)
 #  Read these too: other tools write text into the standard chunks.
 TEXT_CHUNKS = (b"tEXt", b"zTXt", b"iTXt")
 
@@ -106,7 +112,18 @@ def unpack(png: bytes) -> str:
     return payload.decode("utf-8")
 
 
-def blank(width: int = 320, height: int = 200,
+def dimensions(png: bytes) -> tuple[int, int] | None:
+    """A PNG's pixel size, read from IHDR without decoding the image."""
+    try:
+        for _, kind, data in _walk(png):
+            if kind == b"IHDR" and len(data) >= 8:
+                return struct.unpack(">II", data[:8])
+    except CartridgeError:
+        return None
+    return None
+
+
+def blank(width: int = COVER[0], height: int = COVER[1],
           rgb: tuple[int, int, int] = (26, 22, 37)) -> bytes:
     """A plain PNG, so `pack` has something to write into when no art is given.
 

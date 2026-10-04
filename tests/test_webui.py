@@ -786,8 +786,27 @@ def test_the_placeholder_is_a_wordmark_in_a_coloured_box():
     page = (PAGE / "index.html").read_text()
     assert '<span id="mark">lyo</span>' in page
     style = (PAGE / "app.css").read_text()
+    #  The accent fills the wordmark itself, not the box, so letterbox bars
+    #  behind real art are neutral rather than bright.
+    mark = style[style.index("#mark {"):style.index("#world {")]
+    assert "background: var(--accent)" in mark
     cover = style[style.index("#cover {"):style.index("#cover:hover")]
-    assert "background: var(--accent)" in cover
+    assert "background: var(--bg)" in cover
+
+
+def test_cover_art_letterboxes_rather_than_cropping():
+    """No art is ever cut, whatever shape it is, and the file is untouched."""
+    style = (PAGE / "app.css").read_text()
+    assert "object-fit: contain" in style
+    assert "object-fit: cover" not in style
+
+    from lyo.cartridge.png import COVER
+
+    cover = style[style.index("#cover {"):style.index("#cover:hover")]
+    width, height = COVER
+    #  the box is the cover shape, so art drawn to the convention fills it
+    assert f"width: 85px; height: 68px" in cover
+    assert abs((85 / 68) - (width / height)) < 0.03
 
 
 def test_loading_asks_first_and_says_what_it_resets():
@@ -801,7 +820,7 @@ def test_loading_asks_first_and_says_what_it_resets():
 
 def test_the_margin_is_a_third_column():
     style = (PAGE / "app.css").read_text()
-    assert "grid-template-columns: 92px 1fr 240px" in style
+    assert "grid-template-columns: 108px 1fr 240px" in style
 
 
 def test_picking_the_same_file_twice_still_fires():
