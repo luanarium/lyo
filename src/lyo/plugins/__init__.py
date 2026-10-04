@@ -63,13 +63,22 @@ def manager() -> pluggy.PluginManager:
     pm.add_hookspecs(Specs)
     pm.load_setuptools_entrypoints(HOOK)
 
-    #  Register the first-party adapter if its dependency is installed.
+    #  The first-party adapters. webui has no dependencies, so it is always
+    #  available; discord is registered whether or not its extra is installed,
+    #  since it imports discord.py lazily inside run.
+    from lyo.adapters import webui as webui_adapter
+
+    builtin = [("lyo.adapters.webui", webui_adapter)]
     try:
         from lyo.adapters import discord as discord_adapter
     except ImportError:  # pragma: no cover - only without the extra
         discord_adapter = None
-    if discord_adapter is not None and not pm.is_registered(discord_adapter):
-        pm.register(discord_adapter, name="lyo.adapters.discord")
+    if discord_adapter is not None:
+        builtin.append(("lyo.adapters.discord", discord_adapter))
+
+    for name, module in builtin:
+        if not pm.is_registered(module):
+            pm.register(module, name=name)
     return pm
 
 

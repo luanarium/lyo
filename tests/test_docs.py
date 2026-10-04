@@ -114,7 +114,8 @@ def test_the_shipped_documentation_is_current():
 
 # --------------------------------------------------------------- the bundle
 
-def test_bundle_writes_documents_and_an_archive(tmp_path):
+def _copy(tmp_path):
+    """A throwaway copy of the project, so a test cannot write into the repo."""
     import shutil
     import subprocess
 
@@ -123,6 +124,19 @@ def test_bundle_writes_documents_and_an_archive(tmp_path):
         ".git", ".venv", "dist", "__pycache__", "*.db", "*.sock"))
     subprocess.run(["git", "init", "-q"], cwd=work, check=True)
     subprocess.run(["git", "add", "-A"], cwd=work, check=True)
+    return work
+
+
+@pytest.fixture
+def project(tmp_path):
+    """An isolated project whose documentation is already current."""
+    work = _copy(tmp_path)
+    assert run("bundle", "--no-zip", cwd=work).exit_code == 0
+    return work
+
+
+def test_bundle_writes_documents_and_an_archive(tmp_path):
+    work = _copy(tmp_path)
 
     for document in DOCUMENTS:
         (work / document.path).unlink(missing_ok=True)
@@ -144,16 +158,31 @@ def test_bundle_writes_documents_and_an_archive(tmp_path):
     assert not any("/.venv/" in n for n in names), "git decides what is in"
 
 
-def test_bundle_says_nothing_to_do_when_current():
-    result = run("bundle", "--no-zip")
+def test_bundle_says_nothing_to_do_when_current(project):
+    result = run("bundle", "--no-zip", cwd=project)
     assert result.exit_code == 0
     assert "up to date" in result.output
 
 
-def test_bundle_no_zip_writes_no_archive(tmp_path):
-    result = run("bundle", "--no-zip")
+def test_bundle_no_zip_writes_no_archive(project):
+    result = run("bundle", "--no-zip", cwd=project)
     assert result.exit_code == 0
     assert "bytes" not in result.output
+
+
+def test_the_suite_never_writes_into_the_repository(tmp_path):
+    """These tests used to run `bundle` in the working tree, which rewrote
+    tracked files and made a stale-docs failure heal itself on a rerun."""
+    import subprocess
+
+    before = subprocess.run(["git", "status", "--porcelain", "--", "docs",
+                             "README.md"], cwd=ROOT, capture_output=True,
+                            text=True, check=False).stdout
+    run("bundle", "--no-zip", cwd=_copy(tmp_path))
+    after = subprocess.run(["git", "status", "--porcelain", "--", "docs",
+                            "README.md"], cwd=ROOT, capture_output=True,
+                           text=True, check=False).stdout
+    assert before == after
 
 
 def test_bundle_outside_a_repository_explains_itself(tmp_path):

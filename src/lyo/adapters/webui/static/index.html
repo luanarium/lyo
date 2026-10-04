@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lyo</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <h1>lyo<span id="title"></span></h1>
+  <div class="controls">
+    <label>Session
+      <select id="session">
+        <option value="persistent">persistent — saved</option>
+        <option value="ephemeral">ephemeral — forgotten</option>
+      </select>
+    </label>
+    <label>Playing as
+      <input id="player" list="known" placeholder="pick an id" autocomplete="off">
+      <datalist id="known"></datalist>
+    </label>
+    <button id="reset" hidden>Reset</button>
+  </div>
+</header>
+
+<main>
+  <div id="chat"></div>
+  <aside>
+    <h2>Characters</h2>
+    <ul id="players"><li class="empty">none yet — type <code>register</code></li></ul>
+    <h2>Commands</h2>
+    <p id="verbs"></p>
+    <p class="note" id="mode"></p>
+  </aside>
+</main>
+
+<div id="fallback" hidden>
+  <p><strong>quikchat could not be loaded.</strong> The page needs it once from
+  a CDN. To work offline, download it and run:</p>
+  <pre>lyo set adapter.webui.assets=file:///path/to/quikchat
+lyo commit</pre>
+</div>
+
+<script src="app.js" type="module"></script>
+</body>
+</html>
