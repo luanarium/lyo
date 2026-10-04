@@ -13,12 +13,12 @@
   <div class="controls">
     <label>Session
       <select id="session">
+        <option value="ephemeral" selected>ephemeral — forgotten</option>
         <option value="persistent">persistent — saved</option>
-        <option value="ephemeral">ephemeral — forgotten</option>
       </select>
     </label>
     <label>Playing as
-      <input id="player" list="known" placeholder="pick an id" autocomplete="off">
+      <input id="player" list="known" autocomplete="off">
       <datalist id="known"></datalist>
     </label>
     <button id="reset" hidden>Reset</button>

@@ -526,3 +526,60 @@ def test_prose_is_italic_and_numbers_bold():
     assert "<em>${marked}</em>" in script
     #  escaping happens before the tags are inserted, or they would be escaped
     assert script.index("escapeHtml(row)") < script.index("<strong>$1</strong>")
+
+
+# --------------------------------------------------------------- defaults
+
+def test_the_page_opens_on_the_throwaway_simulation(world, tmp_path):
+    """A first visit must not be able to write to the real save."""
+    with Store(tmp_path / "lyo.db") as store:
+        ui = WebUI(Engine(world, seed=7, store=store), {}, None)
+        assert ui.opens_on == "ephemeral"
+        assert ui.pick("").name == "ephemeral"
+        assert ui.pick("nonsense").name == "ephemeral", "a typo is harmless"
+        assert ui.pick("persistent").name == "persistent"
+
+
+def test_which_session_the_page_opens_on_is_a_setting(world, tmp_path):
+    with Store(tmp_path / "lyo.db") as store:
+        ui = WebUI(Engine(world, seed=7, store=store),
+                   {"session": "persistent"}, None)
+        assert ui.opens_on == "persistent"
+        assert ui.pick("").name == "persistent"
+
+    with Store(tmp_path / "other.db") as store:
+        ui = WebUI(Engine(world, seed=7, store=store),
+                   {"session": "nonsense"}, None)
+        assert ui.opens_on == "ephemeral", "an unknown name is not honoured"
+
+
+def test_the_page_is_told_who_to_play_as(world, tmp_path):
+    with Store(tmp_path / "lyo.db") as store:
+        plain = WebUI(Engine(world, seed=7, store=store), {}, None)
+        assert plain.values.get("player", "neo") == "neo"
+        named = WebUI(Engine(world, seed=7, store=store),
+                      {"player": "tester"}, None)
+        assert named.values["player"] == "tester"
+
+
+def test_the_declared_defaults_are_what_the_page_expects():
+    declared = {s.key: s.default for s in lyo_adapter().settings}
+    assert declared["pace"] == "600"
+    assert declared["player"] == "neo"
+    assert declared["session"] == "ephemeral"
+    assert declared["prefix"] == "!"
+
+    script = (PAGE / "app.js").read_text()
+    assert 'session: "ephemeral"' in script, "the page agrees before it asks"
+    assert "pace: 600" in script
+
+
+def test_the_identity_field_is_filled_once_and_then_left_alone():
+    script = (PAGE / "app.js").read_text()
+    assert "if (!state.player)" in script
+    assert "never tread on what has been typed" in script
+
+
+def test_the_session_select_opens_on_ephemeral():
+    page = (PAGE / "index.html").read_text()
+    assert '<option value="ephemeral" selected>' in page

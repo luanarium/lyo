@@ -1,8 +1,10 @@
 // The page: one quikchat instance, pointed at whichever session is selected.
 
 const el = (id) => document.getElementById(id);
-const state = { session: "persistent", player: "", chat: null, stream: null,
-                prefix: "!", pace: 140 };
+//  Opens on the throwaway simulation, so poking around saves nothing until
+//  the session is switched deliberately. Both defaults are settings.
+const state = { session: "ephemeral", player: "", chat: null, stream: null,
+                prefix: "!", pace: 600 };
 
 const api = async (path, options) => {
   const response = await fetch(path, options);
@@ -198,6 +200,11 @@ async function refresh() {
   document.title = `lyo · ${info.title}`;
   state.prefix = info.prefix ?? "!";
   state.pace = info.pace ?? 0;
+  //  Fill the identity once; never tread on what has been typed since.
+  if (!state.player) {
+    state.player = (el("player").value || info.player || "").trim();
+    el("player").value = state.player;
+  }
   el("verbs").innerHTML = info.verbs
     .map((v) => `<code>${escapeHtml(state.prefix + v)}</code>`).join("");
   const box = document.querySelector(".quikchat-input-textbox");
@@ -281,7 +288,12 @@ el("reset").onclick = async () => {
 };
 
 (async () => {
-  const info = await api("/api/state?session=persistent");
-  await load(info);
+  //  An unnamed request means whichever session the host opens on.
+  const first = await api("/api/state");
+  if (first.session && first.session !== state.session) {
+    state.session = first.session;
+  }
+  el("session").value = state.session;
+  await load(first);
   await boot();
 })();

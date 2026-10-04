@@ -42,7 +42,10 @@ SETTINGS = (
     Setting("theme", "A quikchat theme class.", default="quikchat-theme-dark"),
     Setting("pace", "Milliseconds to think before each line of output, shown "
                     "as quikchat's three-dot pulse. 0 is instant.",
-            default="400"),
+            default="600"),
+    Setting("player", "Who the page starts out playing as.", default="neo"),
+    Setting("session", "Which simulation the page opens on: ephemeral keeps "
+                       "nothing, persistent saves.", default="ephemeral"),
     Setting("sweep_seconds", "How often timed-out prompts and lapsed "
                              "challenges are checked.", default="1"),
 )
@@ -63,6 +66,9 @@ the adapter at them:
 lyo set adapter.webui.assets=file:///path/to/quikchat
 lyo commit
 ```
+
+The page opens on the ephemeral session as `neo`, both of which are settings,
+so poking around saves nothing until you switch deliberately.
 
 **Two simulations.** The page has a *persistent* and an *ephemeral* session.
 Persistent is the real one, saved to the project's sqlite3 file alongside
@@ -150,8 +156,18 @@ class WebUI:
             lambda line: clients.push(event("line", line.as_dict())))
         self.sessions[name] = session
 
+    @property
+    def opens_on(self) -> str:
+        """Which simulation an unnamed request means, and the page opens on.
+
+        Ephemeral by default, so neither a stray request nor a first visit
+        writes to the real save.
+        """
+        asked = self.values.get("session") or "ephemeral"
+        return asked if asked in self.sessions else "ephemeral"
+
     def pick(self, name: str) -> Session:
-        return self.sessions.get(name) or self.sessions["persistent"]
+        return self.sessions.get(name) or self.sessions[self.opens_on]
 
     def reset(self, name: str) -> bool:
         """Throw an ephemeral simulation away. The persistent one is kept."""
@@ -174,7 +190,7 @@ class WebUI:
     def attach(self, server: Server) -> None:
         @server.route("GET", "/api/state")
         async def state(request: Request) -> Response:
-            session = self.pick(request.one("session", "persistent"))
+            session = self.pick(request.one("session", self.opens_on))
             described = session.describe()
             described["sessions"] = list(self.sessions)
             described["assets"] = self.values.get(
@@ -182,6 +198,7 @@ class WebUI:
             described["theme"] = self.values.get(
                 "theme", "quikchat-theme-dark")
             described["pace"] = int(self.values.get("pace") or 0)
+            described["player"] = self.values.get("player", "neo")
             #  Read through rather than from the session, so `lyo reload`
             #  changing the prefix reaches a page that is already open.
             described["prefix"] = self.prefix
@@ -200,7 +217,7 @@ class WebUI:
             text = str(payload.get("text") or "")
             if not player:
                 return Response.of_json({"error": "name a player first"}, 400)
-            session = self.pick(str(payload.get("session") or "persistent"))
+            session = self.pick(str(payload.get("session") or self.opens_on))
             reply = session.say(player, text)
             answer = reply.as_dict()
             answer["players"] = session.players()
@@ -217,7 +234,7 @@ class WebUI:
 
         @server.stream("/api/events")
         async def events(request: Request, writer) -> None:
-            name = request.one("session", "persistent")
+            name = request.one("session", self.opens_on)
             clients = self.clients.setdefault(name, Clients())
             handle, queue = clients.open()
             try:
