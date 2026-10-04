@@ -67,12 +67,29 @@ async function drain() {
   draining = true;
   while (pending.length) {
     const [line, mine] = pending.shift();
+    //  The beat goes before the line, including the first: a reply that lands
+    //  the instant you press enter reads like an echo, not an answer.
+    if (state.pace > 0) await beat();
     paint(line, mine);
-    if (state.pace > 0 && pending.length) {
-      await new Promise((go) => setTimeout(go, state.pace));
-    }
   }
   draining = false;
+}
+
+//  quikchat's own three-dot pulse, shown for as long as the beat lasts.
+async function beat() {
+  let dots = null;
+  try {
+    dots = state.chat.messageAddTypingIndicator("", "left");
+  } catch {
+    dots = null;
+  }
+  try {
+    await new Promise((go) => setTimeout(go, state.pace));
+  } finally {
+    if (dots !== null && dots !== undefined) {
+      try { state.chat.messageRemove(dots); } catch {}
+    }
+  }
 }
 
 const escapeHtml = (text) =>

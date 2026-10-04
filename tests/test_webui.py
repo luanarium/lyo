@@ -503,6 +503,23 @@ def test_output_is_paced_through_one_queue():
     assert "state.pace" in script
 
 
+def test_the_beat_comes_before_the_line_not_after():
+    """A reply that lands the instant you press enter reads like an echo."""
+    script = (PAGE / "app.js").read_text()
+    drain = script[script.index("async function drain()"):
+                   script.index("async function beat()")]
+    assert drain.index("await beat()") < drain.index("paint(line, mine)")
+
+
+def test_the_typing_indicator_is_always_removed():
+    script = (PAGE / "app.js").read_text()
+    beat = script[script.index("async function beat()"):
+                  script.index("function say(")]
+    assert "messageAddTypingIndicator" in beat
+    #  in a finally, so a slow or failing paint cannot leave dots stuck
+    assert beat.index("finally") < beat.index("messageRemove")
+
+
 def test_prose_is_italic_and_numbers_bold():
     script = (PAGE / "app.js").read_text()
     assert "<strong>$1</strong>" in script

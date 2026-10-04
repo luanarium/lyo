@@ -40,9 +40,9 @@ SETTINGS = (
     Setting("prefix", "What a command starts with, as in a chat room. Empty "
                       "means no prefix is needed.", default="!"),
     Setting("theme", "A quikchat theme class.", default="quikchat-theme-dark"),
-    Setting("pace", "Milliseconds between lines of output, so a turn reads "
-                    "rather than lands all at once. 0 is instant.",
-            default="140"),
+    Setting("pace", "Milliseconds to think before each line of output, shown "
+                    "as quikchat's three-dot pulse. 0 is instant.",
+            default="400"),
     Setting("sweep_seconds", "How often timed-out prompts and lapsed "
                              "challenges are checked.", default="1"),
 )
