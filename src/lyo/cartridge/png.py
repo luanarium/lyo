@@ -16,12 +16,23 @@ import zlib
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 CHUNK = b"gaMe"
 MAGIC = b"GBC1"
+
+#  A label this module drew itself, rather than art someone chose. Marked so a
+#  reader can tell the difference and draw something better than a blank
+#  square; the mark is copied into any cartridge packed onto it.
+LABEL = b"lyo-label"
+PLACEHOLDER = b"placeholder"
 #  Read these too: other tools write text into the standard chunks.
 TEXT_CHUNKS = (b"tEXt", b"zTXt", b"iTXt")
 
 
 class CartridgeError(Exception):
     """A PNG carried no readable cartridge payload."""
+
+
+def _text(keyword: bytes, value: bytes) -> bytes:
+    """A tEXt chunk: a Latin-1 keyword, a null, then the value."""
+    return _chunk(b"tEXt", keyword + b"\x00" + value)
 
 
 def _chunk(kind: bytes, data: bytes) -> bytes:
@@ -67,8 +78,14 @@ def unpack(png: bytes) -> str:
         if kind == CHUNK:
             found = data
             break
+        #  A payload may have been written into a text chunk by an older
+        #  version or another tool. Require the magic, so unrelated metadata --
+        #  a camera's comment, this module's own label mark -- is not mistaken
+        #  for a payload and reported as a corrupt one.
         if kind in TEXT_CHUNKS and found is None:
-            found = data
+            at = data.find(MAGIC)
+            if at >= 0:
+                found = data[at:]
 
     if found is None:
         raise CartridgeError(
@@ -89,12 +106,29 @@ def unpack(png: bytes) -> str:
     return payload.decode("utf-8")
 
 
-def blank(width: int = 320, height: int = 200, rgb: tuple[int, int, int] = (26, 22, 37)) -> bytes:
-    """A plain PNG, so `pack` has something to write into when no art is given."""
+def blank(width: int = 320, height: int = 200,
+          rgb: tuple[int, int, int] = (26, 22, 37)) -> bytes:
+    """A plain PNG, so `pack` has something to write into when no art is given.
+
+    Marked as a placeholder, so anything showing cartridge covers can draw its
+    own thing rather than a featureless square.
+    """
     raw = b"".join(b"\x00" + bytes(rgb) * width for _ in range(height))
     return (
         SIGNATURE
         + _chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + _text(LABEL, PLACEHOLDER)
         + _chunk(b"IDAT", zlib.compress(raw, 9))
         + _chunk(b"IEND", b"")
     )
+
+
+def is_placeholder(png: bytes) -> bool:
+    """Whether this PNG's picture is one `blank` drew, not art someone chose."""
+    try:
+        for _, kind, data in _walk(png):
+            if kind == b"tEXt" and data.split(b"\x00", 1)[0] == LABEL:
+                return data.split(b"\x00", 1)[1:] == [PLACEHOLDER]
+    except CartridgeError:
+        return False
+    return False

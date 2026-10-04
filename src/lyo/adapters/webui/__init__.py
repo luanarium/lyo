@@ -27,7 +27,7 @@ from pathlib import Path
 from lyo.adapters.webui.http import (Request, Response, Server,
                                      Unavailable, event)
 from lyo.adapters.webui.session import Line, Session
-from lyo.cartridge.png import SIGNATURE
+from lyo.cartridge.png import SIGNATURE, is_placeholder
 from lyo.engine import Engine
 from lyo.lang.check import check_bytes
 from lyo.plugins import Adapter, Setting, hookimpl
@@ -166,15 +166,25 @@ class WebUI:
         return self.values.get("prefix", "!")
 
     @staticmethod
-    def _packaged_cover(source: str | None) -> bytes | None:
-        """A cartridge is a PNG, so its own pixels are its cover."""
+    def _cover_of(data: bytes | None) -> bytes | None:
+        """A cartridge's pixels are its cover -- unless `pack` drew them.
+
+        A label `lyo pack` generated for want of art is a featureless square,
+        and the page has something better to draw, so it is not a cover.
+        """
+        if not data or not data.startswith(SIGNATURE):
+            return None
+        return None if is_placeholder(data) else data
+
+    @classmethod
+    def _packaged_cover(cls, source: str | None) -> bytes | None:
         if not source:
             return None
         path = Path(source)
         if path.suffix.lower() != ".png" or not path.exists():
             return None
         try:
-            return path.read_bytes()
+            return cls._cover_of(path.read_bytes())
         except OSError:  # pragma: no cover - unreadable file
             return None
 
@@ -216,8 +226,7 @@ class WebUI:
 
         self.loaded = report.world
         self.loaded_name = name or "gameworld"
-        self.covers["ephemeral"] = (
-            data if data.startswith(SIGNATURE) else None)
+        self.covers["ephemeral"] = self._cover_of(data)
         self._install("ephemeral", self._fresh())
         self.clients["ephemeral"].push(
             event("reset", {"session": "ephemeral"}))

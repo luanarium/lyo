@@ -628,11 +628,30 @@ def _elsewhere():
     return WORLD.read_text().replace('game "Kairos":', 'game "Elsewhere":')
 
 
+def _art(width=24, height=24):
+    """A small PNG that is not one `blank` drew, so it counts as cover art."""
+    import struct
+    import zlib
+
+    from lyo.cartridge.png import SIGNATURE
+
+    raw = b"".join(b"\x00" + bytes((40, 120, 90)) * width
+                   for _ in range(height))
+
+    def chunk(kind, data):
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+    return (SIGNATURE
+            + chunk(b"IHDR",
+                    struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+
+
 def _cartridge(markdown=None):
     from lyo.cartridge import png
 
-    return png.pack(png.blank(64, 64, (40, 120, 90)),
-                    markdown or _elsewhere())
+    return png.pack(_art(), markdown or _elsewhere())
 
 
 @pytest.fixture
@@ -745,11 +764,9 @@ def test_a_cover_is_served_as_a_png(host):
 
 
 def test_a_cartridge_source_is_its_own_cover(world, tmp_path):
-    """Started on a .png, the cover needs no upload."""
-    from lyo.cartridge import png
-
+    """Started on a .png with real art, the cover needs no upload."""
     cart = tmp_path / "kairos.png"
-    cart.write_bytes(png.pack(png.blank(), WORLD.read_text()))
+    cart.write_bytes(_cartridge(WORLD.read_text()))
     with Store(tmp_path / "lyo.db") as store:
         ui = WebUI(Engine(world, seed=7, store=store), {}, str(cart))
         assert ui.covers["persistent"] is not None
@@ -857,3 +874,29 @@ def test_a_gameworld_upload_over_a_real_socket(world, tmp_path):
         asyncio.run(scenario())
         assert ui.pick("ephemeral").engine.world.title == "Elsewhere"
         assert ui.pick("persistent").engine.world.title == "Kairos"
+
+
+def test_a_generated_label_is_not_treated_as_cover_art(host):
+    """`lyo pack` without art makes a blank square; the margin's own wordmark
+    is better than showing it."""
+    from lyo.cartridge import png
+
+    ok, _, info = host.load_gameworld(
+        "plain.png", png.pack(png.blank(), _elsewhere()))
+    assert ok
+    assert info["cover"] is False
+    assert host.covers["ephemeral"] is None
+    #  the game itself still loaded
+    assert host.pick("ephemeral").engine.world.title == "Elsewhere"
+
+
+def test_a_cartridge_source_with_a_generated_label_shows_no_cover(
+        world, tmp_path):
+    from lyo.cartridge import png
+
+    cart = tmp_path / "kairos.png"
+    cart.write_bytes(png.pack(png.blank(), WORLD.read_text()))
+    with Store(tmp_path / "lyo.db") as store:
+        ui = WebUI(Engine(world, seed=7, store=store), {}, str(cart))
+        assert ui.covers["persistent"] is None
+        assert ui.gameworld("persistent")["cover"] is False
