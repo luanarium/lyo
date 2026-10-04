@@ -27,6 +27,7 @@ from lyo.adapters.webui.http import (Request, Response, Server,
 from lyo.adapters.webui.session import Line, Session
 from lyo.engine import Engine
 from lyo.plugins import Adapter, Setting, hookimpl
+from lyo.signals import stop_on_signals
 
 SETTINGS = (
     Setting("host", "Interface to bind. Loopback unless widened deliberately.",
@@ -211,9 +212,8 @@ class WebUI:
                         payload = b": keep-alive\n\n"
                     writer.write(payload)
                     await writer.drain()
-            except (ConnectionResetError, BrokenPipeError, OSError,
-                    asyncio.CancelledError):
-                pass
+            except (ConnectionResetError, BrokenPipeError, OSError):
+                pass  #  a browser navigating away is not an error
             finally:
                 clients.close(handle)
 
@@ -245,6 +245,7 @@ def run(engine: Engine, values: dict[str, str], source: str | None = None,
         if not server.loopback:
             print(f"warning: bound to {host}, reachable beyond this machine",
                   flush=True)
+        stop_on_signals()
         async with asyncio.TaskGroup() as group:
             group.create_task(server.serve())
             group.create_task(ui.sweeping(every))
@@ -253,7 +254,7 @@ def run(engine: Engine, values: dict[str, str], source: str | None = None,
 
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("stopped", flush=True)
     except Unavailable as exc:
         raise SystemExit(f"lyo: {exc}") from None

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 from lyo.engine import Engine, Message
 from lyo.plugins import Adapter, Setting, hookimpl
+from lyo.signals import stop_on_signals
 
 SETTINGS = (
     Setting("token", "Discord bot token.", required=True, secret=True),
@@ -143,13 +144,17 @@ def run(engine: Engine, values: dict[str, str], source: str | None = None,
         await bot.handle(message)
 
     async def main() -> None:
+        stop_on_signals()
         async with client:
             async with asyncio.TaskGroup() as group:
                 group.create_task(client.start(settings.token))
                 for factory in services:
                     group.create_task(factory())
 
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("stopped", flush=True)
 
 
 class Bot:

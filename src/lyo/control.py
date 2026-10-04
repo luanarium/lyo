@@ -122,14 +122,12 @@ async def serve(service: Service, *, db: Path, host: str | None = None,
 
     print(f"control channel on {where}")
 
-    #  A service manager stops us with SIGTERM, which would otherwise skip the
-    #  cleanup below and leave a stale socket behind. Cancelling this task
-    #  instead unwinds properly and takes the sibling tasks with it.
-    task = asyncio.current_task()
+    #  Stop signals are the host's business, not this task's: handling them
+    #  here replaced asyncio's own handler and cancelled only this task,
+    #  leaving its siblings running with nothing left to interrupt them. See
+    #  lyo.signals. The cleanup below still runs, because the host cancelling
+    #  its task group cancels this one too.
     loop = asyncio.get_running_loop()
-    for number in (signal.SIGTERM, signal.SIGINT):
-        with contextlib.suppress(NotImplementedError, AttributeError):
-            loop.add_signal_handler(number, task.cancel)
 
     #  SIGHUP means reload, as it does for every other daemon, so
     #  `systemctl --user reload` and `lyo reload` do the same thing.
