@@ -619,3 +619,241 @@ def test_the_feed_is_pinned_without_trusting_quikchats_flag():
 def test_sending_always_follows_the_answer():
     script = (PAGE / "app.js").read_text()
     assert "pinned = true;\n  state.chat.messageAddNew(escapeHtml(text)" in script
+
+
+# ---------------------------------------------------------- gameworld files
+
+def _elsewhere():
+    """Kairos under another name, so a load is visible."""
+    return WORLD.read_text().replace('game "Kairos":', 'game "Elsewhere":')
+
+
+def _cartridge(markdown=None):
+    from lyo.cartridge import png
+
+    return png.pack(png.blank(64, 64, (40, 120, 90)),
+                    markdown or _elsewhere())
+
+
+@pytest.fixture
+def host(world, tmp_path):
+    with Store(tmp_path / "lyo.db") as store:
+        yield WebUI(Engine(world, seed=7, store=store), {}, str(WORLD))
+
+
+def test_the_default_gameworld_is_the_one_the_host_started_with(host):
+    for session in ("ephemeral", "persistent"):
+        shown = host.gameworld(session)
+        assert shown == {"name": "kairos.md", "title": "Kairos",
+                         "cover": False, "loaded": False}
+
+
+def test_a_bare_markdown_gameworld_loads(host):
+    ok, problems, info = host.load_gameworld("elsewhere.md",
+                                             _elsewhere().encode())
+    assert ok and problems == []
+    assert info == {"name": "elsewhere.md", "title": "Elsewhere",
+                    "cover": False, "loaded": True}
+    assert host.pick("ephemeral").engine.world.title == "Elsewhere"
+
+
+def test_a_cartridge_brings_its_own_cover(host):
+    from lyo.cartridge.png import SIGNATURE
+
+    ok, _, info = host.load_gameworld("elsewhere.png", _cartridge())
+    assert ok and info["cover"] is True
+    assert host.covers["ephemeral"].startswith(SIGNATURE)
+
+
+def test_a_loaded_gameworld_leaves_the_persistent_session_alone(host):
+    """Saved characters refer to a game's ids, so another game would orphan
+    them."""
+    register(host.pick("persistent"), "w1", "Brynn")
+    host.load_gameworld("elsewhere.png", _cartridge())
+
+    assert host.pick("persistent").engine.world.title == "Kairos"
+    assert "w1" in host.pick("persistent").engine.sim.players
+    assert host.pick("ephemeral").engine.world.title == "Elsewhere"
+    assert host.gameworld("persistent")["loaded"] is False
+
+
+def test_loading_resets_the_ephemeral_session(host):
+    register(host.pick("ephemeral"), "tmp", "Throwaway")
+    assert host.pick("ephemeral").engine.sim.players
+
+    host.load_gameworld("elsewhere.md", _elsewhere().encode())
+    assert host.pick("ephemeral").engine.sim.players == {}
+
+
+def test_a_gameworld_that_does_not_resolve_is_refused_intact(host):
+    host.load_gameworld("elsewhere.md", _elsewhere().encode())
+    broken = _elsewhere().replace('spawns "Goblin Scout"',
+                                  'spawns "Goblin Scowt"')
+
+    ok, problems, info = host.load_gameworld("broken.md", broken.encode())
+    assert not ok and info == {}
+    assert any('did you mean "Goblin Scout"' in p["message"] for p in problems)
+    assert problems[0]["where"].startswith("broken.md:")
+    #  nothing was replaced, so the session is exactly as it was
+    assert host.pick("ephemeral").engine.world.title == "Elsewhere"
+    assert host.loaded_name == "elsewhere.md"
+
+
+@pytest.mark.parametrize("name,data,expected", [
+    ("prose.md", b"# just prose\n\nnothing fenced\n", "no `game` code blocks"),
+    ("rubbish.png", None, "no cartridge payload"),
+    ("binary.bin", b"\x00\x01\x02\xff", "neither a PNG cartridge nor UTF-8"),
+])
+def test_an_unusable_file_says_why(host, name, data, expected):
+    from lyo.cartridge import png
+
+    ok, problems, _ = host.load_gameworld(name, data or png.blank())
+    assert not ok
+    assert expected in problems[0]["message"]
+
+
+def test_unloading_returns_to_the_default(host):
+    host.load_gameworld("elsewhere.png", _cartridge())
+    shown = host.unload_gameworld()
+
+    assert shown["title"] == "Kairos" and shown["loaded"] is False
+    assert host.loaded is None and host.covers["ephemeral"] is None
+    assert host.pick("ephemeral").engine.world.title == "Kairos"
+
+
+def test_a_loaded_gameworld_survives_a_reset(host):
+    """Reset means fresh characters, not a different game."""
+    host.load_gameworld("elsewhere.md", _elsewhere().encode())
+    register(host.pick("ephemeral"), "tmp", "Throwaway")
+
+    host.reset("ephemeral")
+    assert host.pick("ephemeral").engine.world.title == "Elsewhere"
+    assert host.pick("ephemeral").engine.sim.players == {}
+
+
+def test_loading_tells_the_watching_browsers_to_start_over(host):
+    seen = []
+    host.clients["ephemeral"].push = seen.append
+    host.load_gameworld("elsewhere.md", _elsewhere().encode())
+    assert any(b"reset" in payload for payload in seen)
+
+
+def test_a_cover_is_served_as_a_png(host):
+    host.load_gameworld("elsewhere.png", _cartridge())
+    assert host.covers["ephemeral"] is not None
+    assert host.covers["persistent"] is None, "kairos.md is not a cartridge"
+
+
+def test_a_cartridge_source_is_its_own_cover(world, tmp_path):
+    """Started on a .png, the cover needs no upload."""
+    from lyo.cartridge import png
+
+    cart = tmp_path / "kairos.png"
+    cart.write_bytes(png.pack(png.blank(), WORLD.read_text()))
+    with Store(tmp_path / "lyo.db") as store:
+        ui = WebUI(Engine(world, seed=7, store=store), {}, str(cart))
+        assert ui.covers["persistent"] is not None
+        assert ui.gameworld("persistent")["cover"] is True
+
+
+# ------------------------------------------------- the loader on the page
+
+def test_the_cover_box_opens_the_file_picker():
+    script = (PAGE / "app.js").read_text()
+    assert 'el("cover").onclick = () => el("file").click();' in script
+    page = (PAGE / "index.html").read_text()
+    assert 'accept=".png,.md,.markdown,.game"' in page
+
+
+def test_the_placeholder_is_a_wordmark_in_a_coloured_box():
+    page = (PAGE / "index.html").read_text()
+    assert '<span id="mark">lyo</span>' in page
+    style = (PAGE / "app.css").read_text()
+    cover = style[style.index("#cover {"):style.index("#cover:hover")]
+    assert "background: var(--accent)" in cover
+
+
+def test_loading_asks_first_and_says_what_it_resets():
+    page = (PAGE / "index.html").read_text()
+    dialogue = page[page.index('<dialog id="ask">'):page.index("</dialog>")]
+    assert "resets the current game session" in dialogue
+    assert "persistent session is not touched" in dialogue
+    script = (PAGE / "app.js").read_text()
+    assert 'el("ask").showModal()' in script
+
+
+def test_the_margin_is_a_third_column():
+    style = (PAGE / "app.css").read_text()
+    assert "grid-template-columns: 92px 1fr 240px" in style
+
+
+def test_picking_the_same_file_twice_still_fires():
+    script = (PAGE / "app.js").read_text()
+    assert 'e.target.value = "";' in script
+
+
+def test_a_gameworld_upload_over_a_real_socket(world, tmp_path):
+    """The whole loader: upload, cover, refusal, unload."""
+    import urllib.error
+    import urllib.request
+
+    with Store(tmp_path / "lyo.db") as store:
+        ui = WebUI(Engine(world, seed=7, store=store), {}, str(WORLD))
+        server = Server("127.0.0.1", 0)
+        ui.attach(server)
+
+        async def scenario():
+            port = await server.listen()
+            serving = asyncio.create_task(server.serve())
+            base = f"http://127.0.0.1:{port}"
+            loop = asyncio.get_running_loop()
+
+            def send(name, data):
+                request = urllib.request.Request(
+                    f"{base}/api/gameworld?name={name}", method="POST",
+                    data=data)
+                try:
+                    with urllib.request.urlopen(request, timeout=10) as r:
+                        return r.status, json.loads(r.read())
+                except urllib.error.HTTPError as error:
+                    return error.code, json.loads(error.read())
+
+            def fetch(path):
+                try:
+                    with urllib.request.urlopen(base + path, timeout=5) as r:
+                        return r.status, r.headers.get("Content-Type"), r.read()
+                except urllib.error.HTTPError as error:
+                    return error.code, None, b""
+
+            status, _, _ = await loop.run_in_executor(None, fetch, "/api/cover")
+            assert status == 204, "no cover yet, so the page draws its own"
+
+            status, body = await loop.run_in_executor(
+                None, send, "elsewhere.png", _cartridge())
+            assert status == 200, body
+            assert body["gameworld"]["title"] == "Elsewhere"
+            assert body["session"] == "ephemeral"
+
+            status, kind, data = await loop.run_in_executor(
+                None, fetch, "/api/cover?session=ephemeral")
+            assert status == 200 and kind == "image/png"
+            from lyo.cartridge.png import SIGNATURE
+            assert data.startswith(SIGNATURE)
+
+            broken = _elsewhere().replace('spawns "Goblin Scout"',
+                                          'spawns "Goblin Scowt"')
+            status, body = await loop.run_in_executor(
+                None, send, "broken.md", broken.encode())
+            assert status == 400
+            assert "does not resolve" in body["error"]
+            assert body["problems"][0]["code"] == "unknown-monster"
+
+            status, body = await loop.run_in_executor(
+                None, send, "nothing.md", b"")
+            assert status == 400 and "nothing was uploaded" in body["error"]
+
+            serving.cancel()
+
+        asyncio.run(scenario())
+        assert ui.pick("ephemeral").engine.world.title == "Elsewhere"
+        assert ui.pick("persistent").engine.world.title == "Kairos"

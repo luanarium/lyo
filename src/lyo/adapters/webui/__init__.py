@@ -22,10 +22,14 @@ import contextlib
 import secrets
 from typing import Any
 
+from pathlib import Path
+
 from lyo.adapters.webui.http import (Request, Response, Server,
                                      Unavailable, event)
 from lyo.adapters.webui.session import Line, Session
+from lyo.cartridge.png import SIGNATURE
 from lyo.engine import Engine
+from lyo.lang.check import check_bytes
 from lyo.plugins import Adapter, Setting, hookimpl
 from lyo.signals import stop_on_signals
 
@@ -48,6 +52,8 @@ SETTINGS = (
                        "nothing, persistent saves.", default="ephemeral"),
     Setting("sweep_seconds", "How often timed-out prompts and lapsed "
                              "challenges are checked.", default="1"),
+    Setting("max_upload", "Largest gameworld the page will accept, in bytes.",
+            default="4194304"),
 )
 
 SETUP = """Nothing to set up. This adapter is for trying a game out locally,
@@ -69,6 +75,16 @@ lyo commit
 
 The page opens on the ephemeral session as `neo`, both of which are settings,
 so poking around saves nothing until you switch deliberately.
+
+**Loading a gameworld.** The box in the left margin is the loaded gameworld's
+cover. Click it to load another -- a PNG cartridge, whose own pixels become the
+cover, or a bare markdown file. A gameworld is checked before it is accepted,
+and a file that does not resolve is refused with the same diagnostics `lyo
+lint` would give, so a typo is reported rather than half-loaded.
+
+A loaded gameworld runs in the ephemeral session only. The persistent one keeps
+serving the configured game, because its saved characters refer to that game's
+items and locations by id and would be orphaned by another.
 
 **Two simulations.** The page has a *persistent* and an *ephemeral* session.
 Persistent is the real one, saved to the project's sqlite3 file alongside
@@ -132,6 +148,11 @@ class WebUI:
         self.world = engine.world
         self.clients: dict[str, Clients] = {}
         self.sessions: dict[str, Session] = {}
+        #  A loaded gameworld replaces the ephemeral world only; see SETUP.
+        self.loaded: Any = None
+        self.loaded_name: str | None = None
+        self.covers: dict[str, bytes | None] = {
+            "persistent": self._packaged_cover(source), "ephemeral": None}
         self._install("persistent", Session(
             "persistent", engine, persistent=True,
             prefix=values.get("prefix", "!")))
@@ -144,10 +165,73 @@ class WebUI:
         """Read through, so a reload that changes the prefix takes effect."""
         return self.values.get("prefix", "!")
 
+    @staticmethod
+    def _packaged_cover(source: str | None) -> bytes | None:
+        """A cartridge is a PNG, so its own pixels are its cover."""
+        if not source:
+            return None
+        path = Path(source)
+        if path.suffix.lower() != ".png" or not path.exists():
+            return None
+        try:
+            return path.read_bytes()
+        except OSError:  # pragma: no cover - unreadable file
+            return None
+
     def _fresh(self) -> Session:
         """A second engine over the same world, with nothing behind it."""
-        return Session("ephemeral", Engine(self.world), persistent=False,
+        world = self.loaded or self.world
+        return Session("ephemeral", Engine(world), persistent=False,
                        prefix=self.prefix)
+
+    # ------------------------------------------------------- gameworlds
+
+    def gameworld(self, session: str) -> dict:
+        """What the page shows under the cover: which gameworld is loaded."""
+        if session == "ephemeral" and self.loaded_name:
+            return {"name": self.loaded_name,
+                    "title": self.loaded.title or self.loaded_name,
+                    "cover": self.covers.get("ephemeral") is not None,
+                    "loaded": True}
+        name = Path(self.source).name if self.source else "default"
+        return {"name": name, "title": self.world.title or name,
+                "cover": self.covers.get("persistent") is not None,
+                "loaded": False}
+
+    def load_gameworld(self, name: str, data: bytes) -> tuple[bool, list, dict]:
+        """Accept a gameworld file, or refuse it with the reasons.
+
+        It is checked in full before anything is replaced, so a file with a
+        typo in it leaves the running session exactly as it was.
+        """
+        report = check_bytes(name or "gameworld", data)
+        if not report.ok:
+            lines = [
+                {"where": (report.source.where(d.line, d.column)
+                           if report.source else name),
+                 "severity": d.severity, "code": d.code, "message": d.message}
+                for d in report.errors[:12]
+            ]
+            return False, lines, {}
+
+        self.loaded = report.world
+        self.loaded_name = name or "gameworld"
+        self.covers["ephemeral"] = (
+            data if data.startswith(SIGNATURE) else None)
+        self._install("ephemeral", self._fresh())
+        self.clients["ephemeral"].push(
+            event("reset", {"session": "ephemeral"}))
+        return True, [], self.gameworld("ephemeral")
+
+    def unload_gameworld(self) -> dict:
+        """Back to the gameworld the host was started with."""
+        self.loaded = None
+        self.loaded_name = None
+        self.covers["ephemeral"] = None
+        self._install("ephemeral", self._fresh())
+        self.clients["ephemeral"].push(
+            event("reset", {"session": "ephemeral"}))
+        return self.gameworld("ephemeral")
 
     def _install(self, name: str, session: Session) -> None:
         clients = self.clients.setdefault(name, Clients())
@@ -199,6 +283,9 @@ class WebUI:
                 "theme", "quikchat-theme-dark")
             described["pace"] = int(self.values.get("pace") or 0)
             described["player"] = self.values.get("player", "neo")
+            described["gameworld"] = self.gameworld(session.name)
+            described["max_upload"] = int(
+                self.values.get("max_upload") or 4 * 1024 * 1024)
             #  Read through rather than from the session, so `lyo reload`
             #  changing the prefix reaches a page that is already open.
             described["prefix"] = self.prefix
@@ -231,6 +318,31 @@ class WebUI:
                     {"error": "only the ephemeral session can be reset"}, 400)
             self.clients[name].push(event("reset", {"session": name}))
             return Response.of_json({"session": name, "reset": True})
+
+        @server.route("GET", "/api/cover")
+        async def cover(request: Request) -> Response:
+            name = request.one("session", self.opens_on)
+            data = self.covers.get(name)
+            if not data:
+                return Response(204)
+            return Response(200, data, "image/png")
+
+        @server.route("POST", "/api/gameworld")
+        async def gameworld(request: Request) -> Response:
+            filename = request.one("name", "gameworld")
+            if not request.body:
+                return Response.of_json({"error": "nothing was uploaded"}, 400)
+            ok, problems, info = self.load_gameworld(filename, request.body)
+            if not ok:
+                return Response.of_json(
+                    {"error": f"{filename} does not resolve",
+                     "problems": problems}, 400)
+            return Response.of_json({"gameworld": info, "session": "ephemeral"})
+
+        @server.route("POST", "/api/gameworld/unload")
+        async def unload(request: Request) -> Response:
+            return Response.of_json({"gameworld": self.unload_gameworld(),
+                                     "session": "ephemeral"})
 
         @server.stream("/api/events")
         async def events(request: Request, writer) -> None:

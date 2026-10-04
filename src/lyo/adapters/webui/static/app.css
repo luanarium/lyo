@@ -44,7 +44,7 @@ button:hover { filter: brightness(1.1); }
 
 main {
   flex: 1; min-height: 0; width: 100%; max-width: var(--wide);
-  margin: 0 auto; display: grid; grid-template-columns: 1fr 240px;
+  margin: 0 auto; display: grid; grid-template-columns: 92px 1fr 240px;
   /* An explicit row, so the children get a definite height rather than one
      that grows with content. quikchat's root is height:100% with
      overflow:hidden, so without this it clips instead of scrolling. */
@@ -90,10 +90,63 @@ pre { background: var(--panel); padding: 10px; border-radius: 6px;
 /* Prose is italic, the numbers that matter are bold. */
 .quikchat-message-content em { color: var(--dim); }
 .quikchat-message-content strong { font-weight: 650; }
+/* The left margin: the loaded gameworld's cover, which loads another. */
+nav {
+  padding: 12px 10px; display: grid; gap: 8px; align-content: start;
+  justify-items: center; border-right: 1px solid var(--edge);
+  background: var(--panel);
+}
+#cover {
+  width: 68px; height: 68px; padding: 0; overflow: hidden;
+  border-radius: 12px; border: 1px solid var(--edge);
+  background: var(--accent); display: grid; place-items: center;
+  cursor: pointer;
+}
+#cover:hover { border-color: var(--ink); }
+#cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#mark {
+  font-weight: 700; font-size: 20px; letter-spacing: -.02em;
+  color: var(--bg);
+}
+#world {
+  margin: 0; font-size: 11px; line-height: 1.3; text-align: center;
+  color: var(--dim); word-break: break-word;
+}
+#world b { display: block; color: var(--ink); font-weight: 600; }
+button.quiet {
+  background: transparent; color: var(--dim); border-color: var(--edge);
+  font-weight: 400; font-size: 11px; padding: 2px 6px;
+}
+button.quiet:hover { color: var(--ink); }
+
+dialog {
+  max-width: 420px; border: 1px solid var(--edge); border-radius: 12px;
+  background: var(--panel); color: var(--ink); padding: 18px 20px;
+}
+dialog::backdrop { background: rgba(0, 0, 0, .55); }
+dialog h2 { margin: 0 0 8px; font-size: 15px; text-transform: none;
+            letter-spacing: 0; color: var(--ink); }
+dialog p { margin: 0 0 10px; font-size: 14px; }
+dialog menu { display: flex; gap: 8px; justify-content: end;
+              margin: 14px 0 0; padding: 0; }
+#problems {
+  margin: 10px 0 0; padding: 8px 10px; border-radius: 8px;
+  background: var(--bg); border: 1px solid var(--bad);
+  font-family: ui-monospace, monospace; font-size: 12px;
+  max-height: 180px; overflow-y: auto; white-space: pre-wrap;
+}
+
 @media (max-width: 760px) {
+  nav {
+    grid-auto-flow: column; justify-content: start; align-items: center;
+    border-right: 0; border-bottom: 1px solid var(--edge);
+  }
+  #cover { width: 44px; height: 44px; }
+  #mark { font-size: 14px; }
+  #world { text-align: left; }
   main {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     border-left: 0; border-right: 0;
   }
   #chat { border-right: 0; border-bottom: 1px solid var(--edge); }

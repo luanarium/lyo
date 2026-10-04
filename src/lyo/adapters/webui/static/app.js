@@ -4,7 +4,8 @@ const el = (id) => document.getElementById(id);
 //  Opens on the throwaway simulation, so poking around saves nothing until
 //  the session is switched deliberately. Both defaults are settings.
 const state = { session: "ephemeral", player: "", chat: null, stream: null,
-                prefix: "!", pace: 600 };
+                prefix: "!", pace: 600, gameworld: {}, chosen: null,
+                maxUpload: 4 * 1024 * 1024 };
 
 const api = async (path, options) => {
   const response = await fetch(path, options);
@@ -208,6 +209,77 @@ function drawPlayers(players) {
   }
 }
 
+// --------------------------------------------------------- the gameworld
+
+function drawGameworld(info) {
+  const world = info.gameworld || {};
+  state.gameworld = world;
+  el("world").innerHTML =
+    `<b>${escapeHtml(world.title || "untitled")}</b>` +
+    escapeHtml(world.name || "");
+  el("unload").hidden = !world.loaded;
+
+  //  A cartridge's own pixels are its cover. Without one, the box stays a
+  //  plain coloured square with the wordmark in it.
+  const art = el("art");
+  if (world.cover) {
+    art.src = `/api/cover?session=${encodeURIComponent(state.session)}` +
+              `&t=${Date.now()}`;
+    art.hidden = false;
+    el("mark").hidden = true;
+  } else {
+    art.hidden = true;
+    art.removeAttribute("src");
+    el("mark").hidden = false;
+  }
+}
+
+function askToLoad(file) {
+  el("asking").textContent =
+    `Load ${file.name} (${Math.round(file.size / 1024)} KB) into the ` +
+    `ephemeral session?`;
+  el("problems").hidden = true;
+  el("problems").textContent = "";
+  state.chosen = file;
+  el("ask").showModal();
+}
+
+async function loadChosen() {
+  const file = state.chosen;
+  if (!file) return;
+  const limit = state.maxUpload || 4 * 1024 * 1024;
+  if (file.size > limit) {
+    showProblems(`${file.name} is larger than the ${Math.round(limit / 1024)} KB limit.`);
+    return;
+  }
+  try {
+    const answer = await fetch(
+      `/api/gameworld?name=${encodeURIComponent(file.name)}`,
+      { method: "POST", body: file });
+    const body = await answer.json();
+    if (!answer.ok) {
+      showProblems(
+        [body.error || "could not load it",
+         ...(body.problems || []).map(
+           (p) => `${p.where}: ${p.severity}[${p.code}] ${p.message}`)
+        ].join("\n"));
+      return;
+    }
+    el("ask").close();
+    state.session = body.session;
+    el("session").value = state.session;
+    await boot(`— loaded ${body.gameworld.title} —`);
+  } catch (error) {
+    showProblems(String(error.message || error));
+  }
+}
+
+function showProblems(text) {
+  const box = el("problems");
+  box.textContent = text;
+  box.hidden = false;
+}
+
 function describeMode(info) {
   el("mode").textContent = info.persistent
     ? "Persistent: everything here is saved to the project's sqlite3 file."
@@ -256,7 +328,9 @@ async function refresh() {
     .map((v) => `<code>${escapeHtml(state.prefix + v)}</code>`).join("");
   const box = document.querySelector(".quikchat-input-textbox");
   if (box) box.placeholder = `${state.prefix}look — enter to send`;
+  state.maxUpload = info.max_upload || state.maxUpload;
   drawPlayers(info.players);
+  drawGameworld(info);
   describeMode(info);
   return info;
 }
@@ -321,6 +395,23 @@ async function load(info) {
     document.head.append(script);
   });
 }
+
+el("cover").onclick = () => el("file").click();
+el("file").onchange = (e) => {
+  const [file] = e.target.files || [];
+  e.target.value = "";          // so picking the same file twice still fires
+  if (file) askToLoad(file);
+};
+el("cancel").onclick = () => { el("ask").close(); state.chosen = null; };
+el("confirm").onclick = () => loadChosen();
+el("unload").onclick = async () => {
+  await api("/api/gameworld/unload", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: "{}" });
+  state.session = "ephemeral";
+  el("session").value = state.session;
+  await boot("— back to the default gameworld —");
+};
 
 el("session").onchange = (e) => {
   state.session = e.target.value;

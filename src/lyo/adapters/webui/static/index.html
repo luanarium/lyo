@@ -27,6 +27,15 @@
 </header>
 
 <main>
+  <nav>
+    <button id="cover" type="button" title="Load a gameworld">
+      <img id="art" alt="" hidden>
+      <span id="mark">lyo</span>
+    </button>
+    <p id="world"></p>
+    <button id="unload" class="quiet" type="button" hidden>use default</button>
+    <input id="file" type="file" accept=".png,.md,.markdown,.game" hidden>
+  </nav>
   <div id="chat"></div>
   <aside>
     <h2>Characters</h2>
@@ -36,6 +45,18 @@
     <p class="note" id="mode"></p>
   </aside>
 </main>
+
+<dialog id="ask">
+  <h2>Load a gameworld?</h2>
+  <p id="asking"></p>
+  <p class="note">This resets the current game session — characters and
+  progress in it are discarded. The persistent session is not touched.</p>
+  <div id="problems" hidden></div>
+  <menu>
+    <button id="cancel" type="button" class="quiet">Cancel</button>
+    <button id="confirm" type="button">Load</button>
+  </menu>
+</dialog>
 
 <div id="fallback" hidden>
   <p><strong>quikchat could not be loaded.</strong> The page needs it once from

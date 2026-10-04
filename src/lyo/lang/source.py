@@ -60,6 +60,24 @@ def load(path: str | Path) -> Source:
     raise ValueError(f"not a game source file: {path.name} (expected .game, .md or .png)")
 
 
+def from_bytes(name: str, data: bytes) -> Source:
+    """Read game source from bytes, as an upload arrives.
+
+    A cartridge is recognised by its signature rather than its name, since
+    nothing guarantees what a browser calls the file it hands over.
+    """
+    if data.startswith(png_mod.SIGNATURE):
+        return _from_markdown(name, png_mod.unpack(data))
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"{name} is neither a PNG cartridge nor UTF-8 text") from exc
+    if name.lower().endswith(".game"):
+        return Source(origin=name, text=text, raw=text)
+    return _from_markdown(name, text)
+
+
 def _from_markdown(origin: str, markdown: str) -> Source:
     tangled = tangle(markdown)
     return Source(origin=origin, text=tangled.text,

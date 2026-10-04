@@ -19,7 +19,7 @@ from typing import Awaitable, Callable
 from urllib.parse import parse_qs, urlparse
 
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
-MAX_BODY = 64 * 1024
+MAX_BODY = 8 * 1024 * 1024   # a gameworld upload, not just a command
 
 
 class Unavailable(Exception):

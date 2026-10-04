@@ -11,7 +11,7 @@ from lyo.cartridge.png import CartridgeError
 from lyo.lang.model import World
 from lyo.lang.parser import parse
 from lyo.lang.resolve import ERROR, Diagnostic, resolve
-from lyo.lang.source import Source, load
+from lyo.lang.source import Source, from_bytes, load
 
 SUFFIXES = (".md", ".markdown", ".game", ".png")
 
@@ -42,11 +42,27 @@ def check(path: str | Path) -> Report:
     except (CartridgeError, ValueError, OSError) as exc:
         return Report(path, None, None,
                       [Diagnostic(ERROR, "unreadable", str(exc), 1, 1)])
+    return check_source(source, path)
 
+
+def check_bytes(name: str, data: bytes) -> Report:
+    """Check a gameworld that arrived as bytes rather than a path."""
+    try:
+        source = from_bytes(name, data)
+    except (CartridgeError, ValueError) as exc:
+        return Report(Path(name), None, None,
+                      [Diagnostic(ERROR, "unreadable", str(exc), 1, 1)])
+    return check_source(source, Path(name))
+
+
+def check_source(source: Source, path: Path | None = None) -> Report:
+    """Parse and resolve an already-read source."""
+    path = path or Path(source.origin)
     if not source.text.strip():
         return Report(path, source, None,
                       [Diagnostic(ERROR, "empty",
                                   "no `game` code blocks found in this document", 1, 1)])
+
 
     try:
         tree = parse(source.text)
