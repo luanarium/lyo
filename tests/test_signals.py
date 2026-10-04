@@ -1,6 +1,7 @@
 """Stopping cleanly: Ctrl-C, SIGTERM, and who owns them."""
 
 import asyncio
+import re
 import signal
 import socket
 import subprocess
@@ -57,31 +58,38 @@ def test_stop_on_signals_outside_a_loop_is_harmless():
 
 # --------------------------------------------------------- the real process
 
-def _serve(tmp_path, port):
+def _serve(tmp_path):
+    """Start a server on a port it chooses itself, and report which.
+
+    Asking the operating system for a free port and then handing it to a
+    subprocess leaves a window for another test to take it, so the server
+    binds port 0 and the port is read back from what it prints.
+    """
     db = tmp_path / "lyo.db"
     log = open(tmp_path / "out.log", "w+")
     proc = subprocess.Popen(
         [str(ROOT / ".venv" / "bin" / "lyo"), "run", "-a", "webui",
-         "-s", f"webui.port={port}", "--db", str(db)],
+         "-s", "webui.port=0", "--db", str(db)],
         cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
         stdin=subprocess.DEVNULL, start_new_session=True)
-    for _ in range(100):
+
+    #  Generous, because the whole suite may be starting subprocesses too.
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
         time.sleep(0.05)
-        if "serving" in (tmp_path / "out.log").read_text():
-            return proc, db
+        printed = (tmp_path / "out.log").read_text()
+        found = re.search(r"localhost:(\d+)", printed)
+        if found:
+            return proc, db, int(found.group(1))
+        if proc.poll() is not None:
+            break
     proc.kill()
-    pytest.skip(f"server did not start: {(tmp_path / 'out.log').read_text()}")
-
-
-def _free_port():
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
+    pytest.fail(f"server did not start: {(tmp_path / 'out.log').read_text()}")
 
 
 @pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM])
 def test_the_server_stops_on_a_signal(tmp_path, sig):
-    proc, _ = _serve(tmp_path, _free_port())
+    proc, _, _ = _serve(tmp_path)
     proc.send_signal(sig)
     try:
         assert proc.wait(timeout=15) == 0
@@ -93,7 +101,7 @@ def test_the_server_stops_on_a_signal(tmp_path, sig):
 
 def test_stopping_removes_the_control_socket(tmp_path):
     """Why the control channel wanted the signal in the first place."""
-    proc, db = _serve(tmp_path, _free_port())
+    proc, db, _ = _serve(tmp_path)
     sock = socket_path(db)
     assert sock.exists(), "the control channel is listening"
 
@@ -107,9 +115,8 @@ def test_stopping_removes_the_control_socket(tmp_path):
 
 
 def test_an_open_event_stream_does_not_block_shutdown(tmp_path):
-    port = _free_port()
-    proc, _ = _serve(tmp_path, port)
-    stream = socket.create_connection(("127.0.0.1", port), timeout=5)
+    proc, _, port = _serve(tmp_path)
+    stream = socket.create_connection(("127.0.0.1", port), timeout=10)
     stream.sendall(b"GET /api/events?session=persistent HTTP/1.1\r\n"
                    b"Host: localhost\r\n\r\n")
     time.sleep(0.5)

@@ -36,11 +36,17 @@ the same world at once.
 ## Get playing
 
 ```bash
-uv sync --extra discord                       # install, with the Discord adapter
+uv tool install --editable '.[discord]'       # install, with the Discord adapter
 lyo set adapter.discord.token=YOUR_TOKEN      # stage the token
 lyo commit                                    # apply it
-lyo run world/kairos.md                        # serve the example game
+lyo run world/kairos.md                       # serve the example game
 ```
+
+That puts `lyo` on your `PATH`, which is what every example here assumes.
+`--editable` means it keeps following this checkout, so changes to the source
+take effect without reinstalling. To work inside the project without
+installing anything, prefix each command with `uv run` instead, or
+`source .venv/bin/activate` once per shell.
 
 Then in Discord: `!register` to make a character, `!look` to see where you are,
 `!attack wolf` to start a fight.
@@ -139,7 +145,8 @@ def platforms() -> str:
     installed = sorted(adapters().items())
     if not installed:
         return ("# Platforms\n\nNo adapters are installed. "
-                "`uv sync --extra discord` installs the first-party one.\n")
+                "`uv tool install --editable '.[discord]'` installs the "
+                "first-party one.\n")
 
     parts = ["# Platforms", "", "What each installed adapter needs before it "
              "will work. The engine knows none of this — an adapter declares "
@@ -579,6 +586,18 @@ of it.
 
 def deployment() -> str:
     return f"""# Running it
+
+## Getting the command
+
+```bash
+uv tool install --editable '.[discord]'    # lyo on PATH, following this checkout
+uv tool upgrade lyo                        # after dependency changes
+uv tool uninstall lyo                      # undo
+```
+
+Without installing, `uv run lyo ...` works inside the project, as does
+`source .venv/bin/activate` once per shell. Every example below assumes a bare
+`lyo`.
 
 ## By hand
 

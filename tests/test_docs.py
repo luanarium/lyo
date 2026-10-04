@@ -189,3 +189,29 @@ def test_bundle_outside_a_repository_explains_itself(tmp_path):
     result = run("bundle", cwd=tmp_path)
     assert result.exit_code != 0
     assert "not a git repository" in result.output
+
+
+def test_the_documented_install_puts_the_command_on_path():
+    """Every example uses a bare `lyo`, so the install step must provide one.
+    `uv sync` does not: it builds a venv without putting anything on PATH."""
+    readme = (ROOT / "README.md").read_text()
+    deployment = (ROOT / "docs" / "deployment.md").read_text()
+
+    assert "uv tool install" in readme
+    assert "uv tool install" in deployment
+    assert "uv sync" not in readme, "it does not give you a bare lyo"
+    #  and the alternatives are named, for anyone who would rather not install
+    assert "uv run" in readme
+    assert "activate" in readme
+
+
+def test_every_documented_command_is_real():
+    """A bare `lyo <verb>` in the docs has to be a verb that exists."""
+    import re
+
+    from lyo.cli import main
+
+    verbs = set(main.commands)
+    for page in [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]:
+        for verb in re.findall(r"^lyo ([a-z]+)", page.read_text(), re.M):
+            assert verb in verbs, f"{page.name} documents `lyo {verb}`"
