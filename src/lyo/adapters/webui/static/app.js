@@ -52,17 +52,51 @@ function paint(line, mine) {
   const wrapped = classes.length
     ? `<span class="${classes.join(" ")}">${body}</span>` : body;
   state.chat.messageAddNew(wrapped, "", "left", "assistant");
-  follow();
 }
 
-//  quikchat scrolls on its own, but a removed typing indicator changes the
-//  height after it has done so. Nudge it again, and only when the reader is
-//  already at the bottom -- scrolling up to reread should stay put.
-function follow() {
-  if (!state.chat || state.chat.userScrolledUp) return;
-  requestAnimationFrame(() => {
-    try { state.chat.scrollToBottom(); } catch {}
+// ------------------------------------------------------------- following
+//
+// quikchat recomputes `userScrolledUp` on every scroll event, including the
+// one its own programmatic scroll fires. When that scroll lands even a pixel
+// short -- which it does, because a message's height is not settled when it
+// is appended -- the flag latches to true and auto-scroll is dead from then
+// on. So the feed is pinned here instead, from what the reader actually did.
+
+let pinned = true;
+const SLACK = 24;  // px of tolerance, so a short landing is not "scrolled up"
+
+const feed = () => document.querySelector(".quikchat-messages-area");
+
+function atBottom(area) {
+  return area.scrollTop + area.clientHeight >= area.scrollHeight - SLACK;
+}
+
+function toBottom(area) {
+  area.scrollTop = area.scrollHeight;
+  if (state.chat) state.chat.userScrolledUp = false;
+}
+
+function watchFeed() {
+  const area = feed();
+  if (!area || area.dataset.lyoPinned) return;
+  area.dataset.lyoPinned = "1";
+  pinned = true;
+
+  //  Runs after quikchat's own scroll handler, correcting the flag it just
+  //  set, so its scroll-to-bottom button also appears only when it should.
+  area.addEventListener("scroll", () => {
+    pinned = atBottom(area);
+    if (state.chat) state.chat.userScrolledUp = !pinned;
   });
+
+  //  Anything changing the feed's height after the fact: a line appended, a
+  //  typing indicator removed, a long line wrapping, fonts settling.
+  if (typeof MutationObserver !== "undefined") {
+    new MutationObserver(() => {
+      if (pinned) toBottom(area);
+    }).observe(area, { childList: true, subtree: true, characterData: true });
+  }
+  toBottom(area);
 }
 
 // Output is paced so a turn reads instead of landing all at once. One queue,
@@ -111,8 +145,9 @@ const escapeHtml = (text) =>
 
 function say(text) {
   if (!state.chat) return;
+  //  Sending always means you want to see the answer.
+  pinned = true;
   state.chat.messageAddNew(escapeHtml(text), "", "right", "user");
-  follow();
 }
 
 // ------------------------------------------------------------------ sending
@@ -241,6 +276,7 @@ async function boot(banner) {
     sanitize: false,
   });
   sendOnEnter();
+  watchFeed();
   if (banner) show({ text: banner, kind: "refusal" }, true);
   show({ text: `Commands start with ${state.prefix}. ` +
                `Try ${state.prefix}register to make a character, then ` +

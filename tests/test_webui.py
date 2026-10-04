@@ -604,12 +604,18 @@ def test_the_chat_pane_gets_a_definite_height():
     assert "height: 100vh" in body, "the chain needs a definite root"
 
 
-def test_a_new_line_scrolls_into_view_without_fighting_the_reader():
+def test_the_feed_is_pinned_without_trusting_quikchats_flag():
+    """quikchat recomputes `userScrolledUp` on the scroll its own code fires.
+    A landing one pixel short latches it to true and kills auto-scroll, so the
+    page tracks what the reader did and corrects the flag."""
     script = (PAGE / "app.js").read_text()
-    follow = script[script.index("function follow()"):
-                    script.index("//  Output is paced")
-                    if "//  Output is paced" in script else len(script)]
-    assert "userScrolledUp" in follow, "scrolling up to reread stays put"
-    assert "scrollToBottom" in follow
-    #  both the player's own line and anything incoming
-    assert script.count("follow();") >= 2
+    watch = script[script.index("function watchFeed()"):
+                   script.index("function sendOnEnter()")]
+    assert "MutationObserver" in watch, "height can change after the append"
+    assert "userScrolledUp = !pinned" in watch, "the latched flag is corrected"
+    assert "SLACK" in script, "a short landing is not a reader scrolling up"
+
+
+def test_sending_always_follows_the_answer():
+    script = (PAGE / "app.js").read_text()
+    assert "pinned = true;\n  state.chat.messageAddNew(escapeHtml(text)" in script
