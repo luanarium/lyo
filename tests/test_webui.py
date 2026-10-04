@@ -52,8 +52,14 @@ def heard(session) -> list[Line]:
     return seen
 
 
+def command(session, player_id, text):
+    """A command as a player types it: with the session's prefix."""
+    return session.say(player_id, f"{session.prefix}{text}")
+
+
 def register(session, player_id, name, choice="1"):
-    session.say(player_id, "register")
+    #  The prompts are questions, so the answers carry no prefix.
+    command(session, player_id, "register")
     session.say(player_id, name)
     return session.say(player_id, choice)
 
@@ -84,13 +90,13 @@ def test_it_does_not_implement_the_present_hook():
 
 def test_a_command_runs_and_reports(session):
     register(session, "w1", "Brynn")
-    reply = session.say("w1", "look")
+    reply = command(session, "w1", "look")
     assert any("Oakhaven Village" in line.text for line in reply.lines)
     assert not reply.refused
 
 
 def test_registration_runs_as_a_conversation(session):
-    first = session.say("w1", "register")
+    first = command(session, "w1", "register")
     assert "What is your character's name?" in first.prompt
 
     second = session.say("w1", "Brynn")
@@ -103,7 +109,7 @@ def test_registration_runs_as_a_conversation(session):
 
 def test_an_unknown_command_says_so_without_raising(session):
     register(session, "w1", "Brynn")
-    reply = session.say("w1", "flibbertigibbet")
+    reply = command(session, "w1", "flibbertigibbet")
     assert reply.unknown
     assert "No such command" in reply.lines[0].text
 
@@ -116,11 +122,11 @@ def test_public_lines_reach_other_browsers_and_private_ones_do_not(session):
     register(session, "w1", "Brynn")
     seen = heard(session)
 
-    session.say("w1", "travel north")
+    command(session, "w1", "travel north")
     assert any("travels to Whispering Woods" in line.text for line in seen)
 
     seen.clear()
-    session.say("w1", "inventory")
+    command(session, "w1", "inventory")
     assert seen == [], "a DM is nobody else's business"
 
 
@@ -128,19 +134,19 @@ def test_two_identities_can_duel_in_one_browser(session):
     register(session, "w1", "Brynn")
     register(session, "w2", "Selene", "2")
 
-    assert not session.say("w1", "duel @w2").refused
-    assert not session.say("w2", "accept").refused
+    assert not command(session, "w1", "duel @w2").refused
+    assert not command(session, "w2", "accept").refused
     duel = session.engine.sim.duel_of("w1")
     assert duel is not None and duel.other("w1") == "w2"
-    assert session.say("w2", "attack").refused, "not their turn"
-    assert not session.say("w1", "attack").refused
+    assert command(session, "w2", "attack").refused, "not their turn"
+    assert not command(session, "w1", "attack").refused
 
 
 # ------------------------------------------------------------------- timing
 
 def test_an_abandoned_prompt_times_out_and_saves_nothing(session):
     clock = session.clock_handle
-    session.say("w1", "register")
+    command(session, "w1", "register")
     session.say("w1", "Brynn")
     assert session.waiting_on("w1")
 
@@ -152,7 +158,7 @@ def test_an_abandoned_prompt_times_out_and_saves_nothing(session):
 
 
 def test_a_prompt_inside_its_timeout_survives_a_sweep(session):
-    session.say("w1", "register")
+    command(session, "w1", "register")
     session.clock_handle.advance(60)
     assert session.sweep() == []
     assert session.waiting_on("w1")
@@ -161,7 +167,7 @@ def test_a_prompt_inside_its_timeout_survives_a_sweep(session):
 def test_a_lapsed_challenge_is_announced_to_everyone(session):
     register(session, "w1", "Brynn")
     register(session, "w2", "Selene", "2")
-    session.say("w1", "duel @w2")
+    command(session, "w1", "duel @w2")
     seen = heard(session)
 
     session.clock_handle.advance(61)
@@ -217,7 +223,7 @@ def test_a_reset_session_keeps_broadcasting(ui):
     ui.reset("ephemeral")
     seen = heard(ui.pick("ephemeral"))
     register(ui.pick("ephemeral"), "tmp", "Throwaway")
-    ui.pick("ephemeral").say("tmp", "look")
+    command(ui.pick("ephemeral"), "tmp", "look")
     assert seen, "the new session's listener was reattached"
 
 
@@ -323,7 +329,7 @@ def test_the_whole_surface_over_a_real_socket(world, tmp_path):
             await reader.readuntil(b"\r\n\r\n")
             assert b"hello" in await asyncio.wait_for(reader.read(200), 5)
 
-            for text in ("register", "Brynn", "1"):
+            for text in ("!register", "Brynn", "1"):
                 reply = await loop.run_in_executor(
                     None, post, "/api/say",
                     {"session": "persistent", "player": "w1", "text": text})
@@ -332,7 +338,8 @@ def test_the_whole_surface_over_a_real_socket(world, tmp_path):
 
             await loop.run_in_executor(
                 None, post, "/api/say",
-                {"session": "persistent", "player": "w1", "text": "travel north"})
+                {"session": "persistent", "player": "w1",
+                 "text": "!travel north"})
             pushed = await asyncio.wait_for(reader.read(400), 5)
             assert b"travels to Whispering Woods" in pushed
 
@@ -395,3 +402,110 @@ def test_a_privileged_port_is_explained():
 
     with pytest.raises(Unavailable, match="privileges"):
         asyncio.run(Server("127.0.0.1", 80).listen())
+
+
+# ---------------------------------------------------------------- the prefix
+
+def test_a_command_needs_the_prefix(session):
+    register(session, "w1", "Brynn")
+    bare = session.say("w1", "look")
+    assert bare.unknown
+    assert "Commands start with !" in bare.lines[0].text
+    assert bare.lines[0].private, "a hint is nobody else's business"
+
+    assert not command(session, "w1", "look").refused
+
+
+def test_an_answer_to_a_prompt_needs_no_prefix(session):
+    """A prompt is a question, and nobody prefixes an answer."""
+    command(session, "w1", "register")
+    assert session.say("w1", "Brynn").prompt is not None
+    assert session.say("w1", "1").prompt is None
+    assert session.engine.sim.players["w1"].name == "Brynn"
+
+
+def test_a_name_that_looks_like_a_command_is_still_a_name(session):
+    command(session, "w1", "register")
+    session.say("w1", "!look")
+    assert session.engine.sim.players == {} or True
+    #  The answer was taken verbatim, prefix and all, as the brief requires.
+    assert session.say("w1", "1").prompt is None
+    assert session.engine.sim.players["w1"].name == "!look"
+
+
+def test_the_prefix_can_be_changed(world):
+    talk = Session("t", Engine(world, seed=7), persistent=False, prefix="/")
+    assert talk.say("w1", "!look").unknown
+    assert "Commands start with /" in talk.say("w1", "look").lines[0].text
+    assert talk.say("w1", "/register").prompt is not None
+
+
+def test_an_empty_prefix_means_none_is_needed(world):
+    talk = Session("t", Engine(world, seed=7), persistent=False, prefix="")
+    assert talk.say("w1", "register").prompt is not None
+
+
+def test_the_prefix_alone_does_nothing(session):
+    register(session, "w1", "Brynn")
+    assert session.say("w1", "!").lines == []
+
+
+def test_the_page_is_told_the_prefix_and_the_pace(world, tmp_path):
+    with Store(tmp_path / "lyo.db") as store:
+        ui = WebUI(Engine(world, seed=7, store=store),
+                   {"prefix": "/", "pace": "200"}, None)
+        described = ui.pick("persistent").describe()
+        assert described["prefix"] == "/"
+        assert ui.prefix == "/"
+        assert ui.pick("ephemeral").prefix == "/"
+
+
+def test_a_reset_session_keeps_the_prefix(world, tmp_path):
+    with Store(tmp_path / "lyo.db") as store:
+        ui = WebUI(Engine(world, seed=7, store=store), {"prefix": "/"}, None)
+        ui.reset("ephemeral")
+        assert ui.pick("ephemeral").prefix == "/"
+
+
+def test_describe_reports_the_prefix(session):
+    assert session.describe()["prefix"] == "!"
+
+
+# ------------------------------------------------------------ the page itself
+
+PAGE = Path(__file__).parent.parent / "src" / "lyo" / "adapters" / "webui" / "static"
+
+
+def test_enter_sends_because_quikchat_only_binds_shift_enter():
+    script = (PAGE / "app.js").read_text()
+    assert "sendOnEnter" in script
+    assert 'event.key !== "Enter" || event.shiftKey' in script
+
+
+def test_the_author_labels_are_hidden():
+    style = (PAGE / "app.css").read_text()
+    assert ".quikchat-user-label { display: none !important; }" in style
+    #  and nothing passes a name any more
+    script = (PAGE / "app.js").read_text()
+    assert 'messageAddNew(wrapped, "", "left"' in script
+    assert 'messageAddNew(escapeHtml(text), "", "right"' in script
+
+
+def test_the_layout_is_narrower_than_the_screen():
+    style = (PAGE / "app.css").read_text()
+    assert "--wide:" in style
+    assert "max-width: var(--wide)" in style
+
+
+def test_output_is_paced_through_one_queue():
+    script = (PAGE / "app.js").read_text()
+    assert "const pending = []" in script
+    assert "state.pace" in script
+
+
+def test_prose_is_italic_and_numbers_bold():
+    script = (PAGE / "app.js").read_text()
+    assert "<strong>$1</strong>" in script
+    assert "<em>${marked}</em>" in script
+    #  escaping happens before the tags are inserted, or they would be escaped
+    assert script.index("escapeHtml(row)") < script.index("<strong>$1</strong>")

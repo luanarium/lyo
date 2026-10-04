@@ -49,10 +49,12 @@ class Session:
     """An engine plus the browsers watching it."""
 
     def __init__(self, name: str, engine: Engine, *, persistent: bool,
+                 prefix: str = "!",
                  clock: Callable[[], float] = time.monotonic) -> None:
         self.name = name
         self.engine = engine
         self.persistent = persistent
+        self.prefix = prefix
         self.clock = clock
         self.listeners: list[Callable[[Line], None]] = []
         #  When each open prompt stops waiting, so a timeout fires on time.
@@ -76,6 +78,7 @@ class Session:
             "persistent": self.persistent,
             "title": world.title or "untitled",
             "players": self.players(),
+            "prefix": self.prefix,
             "verbs": sorted(
                 [*world.verbs, *world.flows, *world.offers]
             ),
@@ -84,7 +87,12 @@ class Session:
     # ---------------------------------------------------------------- turns
 
     def say(self, player_id: str, text: str) -> Reply:
-        """Answer an open prompt, start a conversation, or run a command."""
+        """Answer an open prompt, start a conversation, or run a command.
+
+        An open prompt takes the text as it was typed: a prompt is a question,
+        and nobody prefixes an answer. Everything else is a command and needs
+        the prefix, exactly as it would in a chat room.
+        """
         text = text.strip()
         if not text:
             return Reply()
@@ -92,6 +100,17 @@ class Session:
         engine = self.engine
         if engine.talking(player_id):
             return self._flow(player_id, engine.reply_flow(player_id, text))
+
+        if self.prefix:
+            if not text.startswith(self.prefix):
+                return Reply(
+                    lines=[Line(f"Commands start with {self.prefix} -- "
+                                f"try {self.prefix}help.", True, "hint",
+                                player_id)],
+                    unknown=True)
+            text = text[len(self.prefix):].strip()
+            if not text:
+                return Reply()
 
         flow = engine.flow_named(text.split()[0])
         if flow is not None:

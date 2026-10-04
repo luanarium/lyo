@@ -1,7 +1,8 @@
 // The page: one quikchat instance, pointed at whichever session is selected.
 
 const el = (id) => document.getElementById(id);
-const state = { session: "persistent", player: "", chat: null, stream: null };
+const state = { session: "persistent", player: "", chat: null, stream: null,
+                prefix: "!", pace: 140 };
 
 const api = async (path, options) => {
   const response = await fetch(path, options);
@@ -16,23 +17,62 @@ const api = async (path, options) => {
 // ---------------------------------------------------------------- rendering
 
 const CLASS = {
-  refusal: "lyo-refusal",
+  refusal: "lyo-refusal", hint: "lyo-hint",
   location: "lyo-view", map: "lyo-view", inventory: "lyo-view",
   roster: "lyo-view", help: "lyo-view", stock: "lyo-view",
 };
 
-function show(line, mine) {
+// A view's second line is its description, which views.py always puts there.
+const DESCRIBED = new Set(["location", "map"]);
+const NUMBER = /(?<![\w;&#])(\d+)(?![\w;])/g;
+
+// Escape first, then insert tags: digits are untouched by escaping, so the
+// number pattern is safe to run afterwards.
+function markup(text, kind) {
+  return text.split("\n").map((row, index) => {
+    let marked = escapeHtml(row).replace(NUMBER, "<strong>$1</strong>");
+    const prose = !/[0-9:]/.test(row) && /[a-z]/.test(row);
+    if ((DESCRIBED.has(kind) && index === 1) || (kind === "flavour" && prose)) {
+      marked = `<em>${marked}</em>`;
+    }
+    return marked;
+  }).join("<br>");
+}
+
+function paint(line, mine) {
   if (!state.chat) return;
   const classes = [];
   if (line.kind && CLASS[line.kind]) classes.push(CLASS[line.kind]);
   if (line.private) classes.push("lyo-private");
   if (!mine && !line.player) classes.push("lyo-notice");
 
-  const who = line.private ? "whisper" : (line.player || "world");
-  const body = classes.length
-    ? `<span class="${classes.join(" ")}">${escapeHtml(line.text)}</span>`
-    : escapeHtml(line.text);
-  state.chat.messageAddNew(body, who, "left", "assistant");
+  const body = markup(line.text, line.kind);
+  const wrapped = classes.length
+    ? `<span class="${classes.join(" ")}">${body}</span>` : body;
+  state.chat.messageAddNew(wrapped, "", "left", "assistant");
+}
+
+// Output is paced so a turn reads instead of landing all at once. One queue,
+// drained in order, so a line pushed by another player cannot jump the turn
+// it interrupted.
+const pending = [];
+let draining = false;
+
+function show(line, mine) {
+  pending.push([line, mine]);
+  if (!draining) drain();
+}
+
+async function drain() {
+  draining = true;
+  while (pending.length) {
+    const [line, mine] = pending.shift();
+    paint(line, mine);
+    if (state.pace > 0 && pending.length) {
+      await new Promise((go) => setTimeout(go, state.pace));
+    }
+  }
+  draining = false;
 }
 
 const escapeHtml = (text) =>
@@ -41,15 +81,15 @@ const escapeHtml = (text) =>
 
 function say(text) {
   if (!state.chat) return;
-  state.chat.messageAddNew(escapeHtml(text), state.player || "you", "right",
-                           "user");
+  state.chat.messageAddNew(escapeHtml(text), "", "right", "user");
 }
 
 // ------------------------------------------------------------------ sending
 
 async function send(text) {
   if (!state.player) {
-    show({ text: "Pick an id under “Playing as” first.", kind: "refusal" }, true);
+    show({ text: "Pick an id under “Playing as” first.", kind: "refusal" },
+         true);
     return;
   }
   say(text);
@@ -139,8 +179,12 @@ async function refresh() {
     `/api/state?session=${encodeURIComponent(state.session)}`);
   el("title").textContent = info.title;
   document.title = `lyo · ${info.title}`;
+  state.prefix = info.prefix ?? "!";
+  state.pace = info.pace ?? 0;
   el("verbs").innerHTML = info.verbs
-    .map((v) => `<code>${escapeHtml(v)}</code>`).join("");
+    .map((v) => `<code>${escapeHtml(state.prefix + v)}</code>`).join("");
+  const box = document.querySelector(".quikchat-input-textbox");
+  if (box) box.placeholder = `${state.prefix}look — enter to send`;
   drawPlayers(info.players);
   describeMode(info);
   return info;
@@ -160,11 +204,29 @@ async function boot(banner) {
                  show: true },
     sanitize: false,
   });
+  sendOnEnter();
   if (banner) show({ text: banner, kind: "refusal" }, true);
-  show({ text: `Type a command, or "register" to make a character. ` +
-               `Switch identity above to play both sides of a duel.`,
-         private: true }, true);
+  show({ text: `Commands start with ${state.prefix}. ` +
+               `Try ${state.prefix}register to make a character, then ` +
+               `${state.prefix}look.`, private: true, kind: "flavour" }, true);
+  show({ text: `Switch identity above to play both sides of a duel.`,
+         private: true, kind: "flavour" }, true);
   listen();
+}
+
+function sendOnEnter() {
+  const box = document.querySelector(".quikchat-input-textbox");
+  if (!box || box.dataset.lyoEnter) return;
+  box.dataset.lyoEnter = "1";
+  box.placeholder = `${state.prefix}look — enter to send`;
+  //  quikchat binds Shift+Enter only, and exposes no option to change it.
+  box.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    const text = box.value.trim();
+    if (text) send(text);          // messageAddNew clears the box for us
+  });
+  box.focus();
 }
 
 function pickPlayer(id) {

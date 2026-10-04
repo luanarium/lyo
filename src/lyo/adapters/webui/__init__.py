@@ -37,7 +37,12 @@ SETTINGS = (
             secret=True),
     Setting("assets", "Where to load quikchat from. Point this at a local copy "
                       "to work offline.", default="https://unpkg.com/quikchat"),
+    Setting("prefix", "What a command starts with, as in a chat room. Empty "
+                      "means no prefix is needed.", default="!"),
     Setting("theme", "A quikchat theme class.", default="quikchat-theme-dark"),
+    Setting("pace", "Milliseconds between lines of output, so a turn reads "
+                    "rather than lands all at once. 0 is instant.",
+            default="140"),
     Setting("sweep_seconds", "How often timed-out prompts and lapsed "
                              "challenges are checked.", default="1"),
 )
@@ -121,15 +126,22 @@ class WebUI:
         self.world = engine.world
         self.clients: dict[str, Clients] = {}
         self.sessions: dict[str, Session] = {}
-        self._install("persistent", Session("persistent", engine,
-                                            persistent=True))
+        self._install("persistent", Session(
+            "persistent", engine, persistent=True,
+            prefix=values.get("prefix", "!")))
         self._install("ephemeral", self._fresh())
 
     #  ------------------------------------------------------------ sessions
 
+    @property
+    def prefix(self) -> str:
+        """Read through, so a reload that changes the prefix takes effect."""
+        return self.values.get("prefix", "!")
+
     def _fresh(self) -> Session:
         """A second engine over the same world, with nothing behind it."""
-        return Session("ephemeral", Engine(self.world), persistent=False)
+        return Session("ephemeral", Engine(self.world), persistent=False,
+                       prefix=self.prefix)
 
     def _install(self, name: str, session: Session) -> None:
         clients = self.clients.setdefault(name, Clients())
@@ -169,6 +181,12 @@ class WebUI:
                 "assets", "https://unpkg.com/quikchat")
             described["theme"] = self.values.get(
                 "theme", "quikchat-theme-dark")
+            described["pace"] = int(self.values.get("pace") or 0)
+            #  Read through rather than from the session, so `lyo reload`
+            #  changing the prefix reaches a page that is already open.
+            described["prefix"] = self.prefix
+            for session in self.sessions.values():
+                session.prefix = self.prefix
             described["source"] = self.source
             described["waiting"] = [
                 p["id"] for p in described["players"]

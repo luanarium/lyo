@@ -11,15 +11,20 @@
   }
 }
 * { box-sizing: border-box; }
+/* Narrower than the screen: a chat log is easier to read in a column. */
+:root { --wide: 980px; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
   display: flex; flex-direction: column; height: 100vh;
 }
 header {
+  border-bottom: 1px solid var(--edge); background: var(--panel);
+}
+header > .bar {
   display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
   justify-content: space-between;
-  padding: 10px 16px; border-bottom: 1px solid var(--edge); background: var(--panel);
+  max-width: var(--wide); margin: 0 auto; padding: 10px 16px;
 }
 h1 { margin: 0; font-size: 17px; letter-spacing: .02em; }
 h1 span { color: var(--dim); font-weight: 400; }
@@ -35,8 +40,11 @@ button { cursor: pointer; background: var(--accent); color: var(--bg);
          border-color: transparent; font-weight: 600; }
 button:hover { filter: brightness(1.1); }
 
-main { flex: 1; display: grid; grid-template-columns: 1fr 260px;
-       min-height: 0; }
+main {
+  flex: 1; min-height: 0; width: 100%; max-width: var(--wide);
+  margin: 0 auto; display: grid; grid-template-columns: 1fr 240px;
+  border-left: 1px solid var(--edge); border-right: 1px solid var(--edge);
+}
 #chat { min-height: 0; border-right: 1px solid var(--edge); }
 aside { padding: 14px 16px; overflow-y: auto; background: var(--panel); }
 h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
@@ -59,14 +67,21 @@ aside h2:not(:first-child) { margin-top: 20px; }
 pre { background: var(--panel); padding: 10px; border-radius: 6px;
       overflow-x: auto; font-size: 13px; }
 
+/* One player testing one game, so every message's author is the same two
+   people and the labels are noise. quikchat has no option for this. */
+.quikchat-user-label { display: none !important; }
+
 /* quikchat lines, tinted by what the engine called them */
 .lyo-refusal { color: var(--bad); }
 .lyo-private { color: var(--accent); }
 .lyo-notice  { color: var(--warn); font-style: italic; }
-.lyo-view    { white-space: pre-wrap; font-family: ui-monospace, monospace;
-               font-size: 13px; }
-@media (max-width: 720px) {
-  main { grid-template-columns: 1fr; }
+.lyo-view    { font-family: ui-monospace, monospace; font-size: 13px; }
+.lyo-hint    { color: var(--dim); font-style: italic; }
+/* Prose is italic, the numbers that matter are bold. */
+.quikchat-message-content em { color: var(--dim); }
+.quikchat-message-content strong { font-weight: 650; }
+@media (max-width: 760px) {
+  main { grid-template-columns: 1fr; border-left: 0; border-right: 0; }
   #chat { border-right: 0; border-bottom: 1px solid var(--edge); }
   aside { max-height: 38vh; }
 }
