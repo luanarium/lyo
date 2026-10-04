@@ -33,20 +33,40 @@ A game engine for chatbot games. You write a game as one markdown file — prose
 and code together — and lyo serves it to a chat room, where several people play
 the same world at once.
 
+## Install
+
+```bash
+uv tool install --editable '.[discord]'
+```
+
+That is the way to install lyo. It puts `lyo` on your `PATH` in an environment
+of its own, so every command below is just `lyo ...` with nothing in front of
+it. `--editable` keeps it following this checkout, so source changes take
+effect immediately; drop it for a frozen copy, and drop `[discord]` if you only
+want the browser adapter, which needs no dependencies at all.
+
+```bash
+uv tool upgrade lyo        # after changing dependencies, not after editing code
+uv tool uninstall lyo      # undo
+uv tool list               # what is installed
+```
+
+Without installing, `uv run lyo ...` works inside the project, and
+`source .venv/bin/activate` gives one shell a bare `lyo`.
+
 ## Get playing
 
 ```bash
-uv tool install --editable '.[discord]'       # install, with the Discord adapter
 lyo set adapter.discord.token=YOUR_TOKEN      # stage the token
 lyo commit                                    # apply it
 lyo run world/kairos.md                       # serve the example game
 ```
 
-That puts `lyo` on your `PATH`, which is what every example here assumes.
-`--editable` means it keeps following this checkout, so changes to the source
-take effect without reinstalling. To work inside the project without
-installing anything, prefix each command with `uv run` instead, or
-`source .venv/bin/activate` once per shell.
+Or try it with no account at all, in a browser:
+
+```bash
+lyo run -a webui                              # prints a URL; open it
+```
 
 Then in Discord: `!register` to make a character, `!look` to see where you are,
 `!attack wolf` to start a fight.
@@ -452,6 +472,21 @@ irc = "my_package.irc"
 `lyo adapters` then lists it, and its settings become configuration paths of the
 form `adapter.irc.server`.
 
+## Installing one
+
+Discovery is by entry point, so an adapter has to live in the same environment
+as the command. With lyo installed as a tool, `--with` puts it there:
+
+```bash
+uv tool install --editable '.[discord]' --with lyo-irc
+lyo adapters                 # it appears, with its own settings
+lyo run -a irc
+```
+
+Nothing else is required — no registration, no configuration file. Working on
+an adapter alongside lyo, `--with-editable` points at its checkout instead, so
+both follow their source.
+
 ## What run receives
 
 | Argument | |
@@ -587,7 +622,7 @@ of it.
 def deployment() -> str:
     return f"""# Running it
 
-## Getting the command
+## Installing
 
 ```bash
 uv tool install --editable '.[discord]'    # lyo on PATH, following this checkout
@@ -595,9 +630,26 @@ uv tool upgrade lyo                        # after dependency changes
 uv tool uninstall lyo                      # undo
 ```
 
-Without installing, `uv run lyo ...` works inside the project, as does
-`source .venv/bin/activate` once per shell. Every example below assumes a bare
-`lyo`.
+This is how lyo is meant to be installed: `uv tool install` gives it an
+environment of its own and puts the command on `PATH`, so every example here
+is a bare `lyo`. `uv sync` builds the project's virtual environment but puts
+nothing on `PATH`, so it needs `uv run lyo ...` or `source .venv/bin/activate`.
+
+One thing to know about `--editable`: the tool follows this checkout, so
+editing the source takes effect at once, but its dependencies were resolved
+when it was installed. After adding or changing one, `uv tool upgrade lyo`.
+The symptom otherwise is an `ImportError` from `lyo` while `uv run lyo` is
+fine.
+
+### Adapters that are not first-party
+
+An adapter is a plugin found by entry point, so it has to live in the same
+environment as the command. `--with` puts it there:
+
+```bash
+uv tool install --editable '.[discord]' --with lyo-matrix
+lyo adapters                      # it appears, with its own settings
+```
 
 ## By hand
 

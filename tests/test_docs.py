@@ -191,18 +191,31 @@ def test_bundle_outside_a_repository_explains_itself(tmp_path):
     assert "not a git repository" in result.output
 
 
-def test_the_documented_install_puts_the_command_on_path():
+def test_tool_install_is_the_documented_way_to_install():
     """Every example uses a bare `lyo`, so the install step must provide one.
     `uv sync` does not: it builds a venv without putting anything on PATH."""
     readme = (ROOT / "README.md").read_text()
     deployment = (ROOT / "docs" / "deployment.md").read_text()
 
-    assert "uv tool install" in readme
+    #  It leads the README, under its own heading, before anything uses `lyo`.
+    assert "## Install" in readme
+    assert readme.index("uv tool install") < readme.index("lyo set")
     assert "uv tool install" in deployment
-    assert "uv sync" not in readme, "it does not give you a bare lyo"
-    #  and the alternatives are named, for anyone who would rather not install
-    assert "uv run" in readme
-    assert "activate" in readme
+
+    for page in (readme, deployment):
+        assert "uv tool upgrade" in page, "the dependency caveat is stated"
+        assert "uv tool uninstall" in page, "and how to undo it"
+    #  the alternatives are named, for anyone who would rather not install
+    assert "uv run" in readme and "activate" in readme
+
+
+def test_installing_a_third_party_adapter_is_documented():
+    """Discovery is by entry point, so an adapter must share the command's
+    environment -- which `uv tool install --with` is how you arrange."""
+    for name in ("deployment.md", "adapters.md"):
+        page = (ROOT / "docs" / name).read_text()
+        assert "--with" in page, name
+        assert "entry point" in page, name
 
 
 def test_every_documented_command_is_real():
