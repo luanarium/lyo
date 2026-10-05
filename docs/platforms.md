@@ -66,13 +66,19 @@ lyo run -a webui
 
 It prints a URL; open it. The page needs internet once, to fetch
 [quikchat](https://github.com/deftio/quikchat) from a CDN. To work offline,
-download `quikchat.umd.min.js` and `quikchat.css` next to each other and point
-the adapter at them:
+download `quikchat.umd.min.js` and `quikchat.css` next to each other and name
+the directory holding them:
 
 ```
-lyo set adapter.webui.assets=file:///path/to/quikchat
+lyo set adapter.webui.assets=/path/to/quikchat
 lyo commit
 ```
+
+A `file://` URL means the same thing, and on Windows that is
+`file:///C:/path/to/quikchat`. Either way the adapter serves those two files
+itself, from `/assets/`, because a page served over HTTP is not allowed to load
+a script off the local filesystem. Anything beginning `http://` or `https://` is
+handed to the page as it stands, so a CDN or a mirror still works.
 
 The page opens on the ephemeral session as `neo`, both of which are settings,
 so poking around saves nothing until you switch deliberately.

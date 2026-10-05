@@ -24,14 +24,42 @@ from typing import Any
 
 from pathlib import Path
 
-from lyo.adapters.webui.http import (Request, Response, Server,
-                                     Unavailable, event)
+from lyo.adapters.webui.http import (Request, Response, Server, Unavailable,
+                                     event, type_of)
 from lyo.adapters.webui.session import Line, Session
 from lyo.cartridge.png import SIGNATURE, is_placeholder
 from lyo.engine import Engine
 from lyo.lang.check import check_bytes
 from lyo.plugins import Adapter, Setting, hookimpl
 from lyo.signals import stop_on_signals
+
+CDN = "https://unpkg.com/quikchat"
+
+#  The two files quikchat ships, and the names a local copy keeps.
+VENDORED = ("quikchat.umd.min.js", "quikchat.css")
+
+
+def vendored(value: str) -> Path | None:
+    """The directory a local `assets` setting names, or None for a URL.
+
+    A browser will not load a `file://` script from an `http://` page, so a
+    local copy cannot simply be handed to the page as a URL -- the adapter
+    serves it instead, from the directory named here.
+    """
+    from urllib.parse import urlparse
+    from urllib.request import url2pathname
+
+    if not value or value.startswith(("http://", "https://", "//")):
+        return None
+    if value.startswith("file:"):
+        #  url2pathname is what turns /C:/x into C:\x on Windows.
+        path = Path(url2pathname(urlparse(value).path))
+    else:
+        path = Path(value).expanduser()
+    if path.suffix == ".js":
+        path = path.parent
+    return path
+
 
 SETTINGS = (
     Setting("host", "Interface to bind. Loopback unless widened deliberately.",
@@ -65,13 +93,19 @@ lyo run -a webui
 
 It prints a URL; open it. The page needs internet once, to fetch
 [quikchat](https://github.com/deftio/quikchat) from a CDN. To work offline,
-download `quikchat.umd.min.js` and `quikchat.css` next to each other and point
-the adapter at them:
+download `quikchat.umd.min.js` and `quikchat.css` next to each other and name
+the directory holding them:
 
 ```
-lyo set adapter.webui.assets=file:///path/to/quikchat
+lyo set adapter.webui.assets=/path/to/quikchat
 lyo commit
 ```
+
+A `file://` URL means the same thing, and on Windows that is
+`file:///C:/path/to/quikchat`. Either way the adapter serves those two files
+itself, from `/assets/`, because a page served over HTTP is not allowed to load
+a script off the local filesystem. Anything beginning `http://` or `https://` is
+handed to the page as it stands, so a CDN or a mirror still works.
 
 The page opens on the ephemeral session as `neo`, both of which are settings,
 so poking around saves nothing until you switch deliberately.
@@ -164,6 +198,16 @@ class WebUI:
     def prefix(self) -> str:
         """Read through, so a reload that changes the prefix takes effect."""
         return self.values.get("prefix", "!")
+
+    def assets_url(self) -> str:
+        """Where the page should load quikchat from.
+
+        A local copy is served from here rather than handed over as a
+        `file://` URL, which the page's own origin would not be allowed to
+        load. Read through, so `lyo reload` can move it.
+        """
+        value = self.values.get("assets") or CDN
+        return f"/assets/{VENDORED[0]}" if vendored(value) else value
 
     @staticmethod
     def _cover_of(data: bytes | None) -> bytes | None:
@@ -286,8 +330,7 @@ class WebUI:
             session = self.pick(request.one("session", self.opens_on))
             described = session.describe()
             described["sessions"] = list(self.sessions)
-            described["assets"] = self.values.get(
-                "assets", "https://unpkg.com/quikchat")
+            described["assets"] = self.assets_url()
             described["theme"] = self.values.get(
                 "theme", "quikchat-theme-dark")
             described["pace"] = int(self.values.get("pace") or 0)
@@ -327,6 +370,24 @@ class WebUI:
                     {"error": "only the ephemeral session can be reset"}, 400)
             self.clients[name].push(event("reset", {"session": name}))
             return Response.of_json({"session": name, "reset": True})
+
+        #  One route per file quikchat ships: the names are fixed, so there is
+        #  no path to traverse out of the directory the setting names.
+        @server.route("GET", f"/assets/{VENDORED[0]}")
+        @server.route("GET", f"/assets/{VENDORED[1]}")
+        async def asset(request: Request) -> Response:
+            directory = vendored(self.values.get("assets") or CDN)
+            if directory is None:
+                return Response.text("quikchat is loaded from a CDN here, so "
+                                     "there is no local copy to serve", 404)
+            name = request.path.rsplit("/", 1)[-1]
+            try:
+                data = (directory / name).read_bytes()
+            except OSError:
+                return Response.text(
+                    f"adapter.webui.assets names {directory}, which has no "
+                    f"{name} in it", 404)
+            return Response(200, data, type_of(name))
 
         @server.route("GET", "/api/cover")
         async def cover(request: Request) -> Response:

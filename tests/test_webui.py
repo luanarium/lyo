@@ -323,6 +323,61 @@ def test_the_printed_url_carries_the_token():
     assert "token=sesame" in Server("10.0.0.5", 8720, token="sesame").url()
 
 
+# ----------------------------------------------------------- local quikchat
+
+def test_a_local_copy_of_quikchat_is_recognised_however_it_is_named(tmp_path):
+    from lyo.adapters.webui import vendored
+
+    assert vendored(f"{tmp_path}") == tmp_path
+    assert vendored(f"file://{tmp_path}") == tmp_path
+    assert vendored(f"{tmp_path}/quikchat.umd.min.js") == tmp_path, "the file"
+    assert vendored("https://unpkg.com/quikchat") is None
+    assert vendored("") is None
+
+
+def test_a_local_copy_is_served_rather_than_handed_over_as_a_file_url(
+        world, tmp_path):
+    """A page served over HTTP may not load a script off the filesystem."""
+    (tmp_path / "quikchat.umd.min.js").write_text("window.quikchat = 1;")
+    (tmp_path / "quikchat.css").write_text(".quikchat {}")
+
+    ui = WebUI(Engine(world, seed=7), {"assets": str(tmp_path)}, str(WORLD))
+    assert ui.assets_url() == "/assets/quikchat.umd.min.js"
+
+    server = Server("127.0.0.1", 0)
+    ui.attach(server)
+    script = asyncio.run(server.routes[("GET", "/assets/quikchat.umd.min.js")](
+        Request("GET", "/assets/quikchat.umd.min.js", {}, {})))
+    style = asyncio.run(server.routes[("GET", "/assets/quikchat.css")](
+        Request("GET", "/assets/quikchat.css", {}, {})))
+
+    assert script.status == 200 and b"window.quikchat" in script.body
+    assert script.content_type == "text/javascript; charset=utf-8"
+    assert style.status == 200 and style.content_type == "text/css; charset=utf-8"
+
+
+def test_a_cdn_url_reaches_the_page_as_it_stands(world):
+    ui = WebUI(Engine(world, seed=7), {}, str(WORLD))
+    assert ui.assets_url() == "https://unpkg.com/quikchat"
+
+    mirror = WebUI(Engine(world, seed=7), {"assets": "https://mine/quikchat"},
+                   str(WORLD))
+    assert mirror.assets_url() == "https://mine/quikchat"
+
+
+def test_a_local_copy_that_is_not_there_says_which_file_is_missing(
+        world, tmp_path):
+    ui = WebUI(Engine(world, seed=7), {"assets": str(tmp_path)}, str(WORLD))
+    server = Server("127.0.0.1", 0)
+    ui.attach(server)
+
+    answer = asyncio.run(server.routes[("GET", "/assets/quikchat.css")](
+        Request("GET", "/assets/quikchat.css", {}, {})))
+    assert answer.status == 404
+    assert "quikchat.css" in answer.body.decode()
+    assert str(tmp_path) in answer.body.decode()
+
+
 # -------------------------------------------------------------- end to end
 
 def test_the_whole_surface_over_a_real_socket(world, tmp_path):
