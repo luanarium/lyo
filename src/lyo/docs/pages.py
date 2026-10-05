@@ -219,7 +219,7 @@ def platforms() -> str:
         ("intent", "A Discord permission to receive a category of event"),
         ("gateway", "Discord's websocket connection, which a bot holds open"),
         ("OAuth scope", "What an invite link grants the bot"),
-        ("token", "The bot's credential. It lives in configuration, not in a file you ship"),
+        ("token", "The bot's credential. It comes from configuration, the environment or a .env -- never from the game you ship"),
     ])]
     return "\n".join(parts)
 
@@ -635,8 +635,16 @@ between machines with a pipe.
 | `control.main.port` | Port for that, `0` to choose one |
 | `control.main.token` | Required if the host is not loopback |
 
-Settings resolve in order: the adapter's declared default, then configuration,
-then `LYO_<ADAPTER>_<KEY>` in the environment, then `-s` on the command line.
+Settings resolve in order: the adapter's declared default, then a `.env` file,
+then configuration, then the environment, then `-s` on the command line.
+
+The two environment names for a setting are `LYO_<ADAPTER>_<KEY>` and the bare
+`<ADAPTER>_<KEY>`, so the `DISCORD_TOKEN` a machine already uses for a
+discord.py bot is picked up as it stands. A `.env` is looked for beside the
+project and one directory above it, in both the current directory and wherever
+`lyo.db` is, and ranks below configuration: the file is whatever the host
+happens to have, `lyo set` is what you chose. `lyo run --check` prints which of
+them each setting came from, naming secrets without printing them.
 
 ## Where it lives
 
@@ -727,8 +735,11 @@ lyo service install --name kairos # run more than one game at once
 ```
 
 The definition carries no secrets, because the token is configuration. Note
-that a service does not inherit your shell, so `LYO_*` variables will not reach
-it — install warns if any are set.
+that a service does not inherit your shell, so variables set there will not
+reach it — install warns if any are set. A `.env` does reach it, since lyo
+reads the file itself, but only one beside `lyo.db` or a directory above it:
+there is no shell, and Task Scheduler sets no working directory. Install says
+which of the files it found fall on which side of that line.
 
 ## Changing things without a restart
 

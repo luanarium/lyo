@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from lyo.adapters.discord import Bot, Settings, lyo_adapter, lyo_present
+from lyo.adapters.discord import (Bot, Settings, diagnose, lyo_adapter,
+                                  lyo_present)
 from lyo.engine import Engine
 from lyo.lang.check import check
 from lyo.plugins import adapters, manager
@@ -20,9 +21,19 @@ class Forbidden(Exception):
     """What discord raises when a user's DMs are closed."""
 
 
+class LoginFailure(Exception):
+    """What discord raises for a token it will not accept."""
+
+
+class PrivilegedIntentsRequired(Exception):
+    """What discord raises when the portal has not granted an intent."""
+
+
 @dataclass
 class FakeDiscord:
     Forbidden = Forbidden
+    LoginFailure = LoginFailure
+    PrivilegedIntentsRequired = PrivilegedIntentsRequired
 
 
 @dataclass
@@ -120,6 +131,24 @@ def test_the_adapter_declares_its_settings_in_uci_shape():
     keys = [s.key for s in lyo_adapter().settings]
     assert keys == ["token", "prefix", "owner", "notice_seconds"]
     assert lyo_adapter().settings[0].required
+
+
+def test_a_refused_token_is_explained_not_traced():
+    #  discord.py raises from inside the TaskGroup, so it arrives in a group.
+    group = ExceptionGroup("start", [LoginFailure("401 Unauthorized")])
+    advice = diagnose(group, FakeDiscord())
+    assert advice is not None
+    assert "DISCORD_TOKEN" in advice and "Reset Token" in advice
+
+
+def test_a_missing_intent_points_at_the_portal():
+    advice = diagnose(PrivilegedIntentsRequired("shard 0"), FakeDiscord())
+    assert advice is not None
+    assert "Message Content Intent" in advice
+
+
+def test_any_other_failure_is_left_alone():
+    assert diagnose(RuntimeError("something else"), FakeDiscord()) is None
 
 
 def test_presentation_bolds_numbers_and_badges_a_view():

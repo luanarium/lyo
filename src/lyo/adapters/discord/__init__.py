@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sys
 from dataclasses import dataclass, field
 
 from lyo.engine import Engine, Message
@@ -37,6 +38,12 @@ the [developer portal](https://discord.com/developers/applications).
 
 1. **Create an application**, then under **Bot** use *Reset Token* to get a
    token. That is `adapter.discord.token`.
+
+   A machine that already runs a discord.py bot usually keeps that token in a
+   `.env` file as `DISCORD_TOKEN`. Leave it there: a `.env` beside the project
+   -- or one directory above it -- is read at startup, as is `$DISCORD_TOKEN`
+   itself, so nothing has to be copied into configuration. `lyo run --check`
+   prints which of them the token came from.
 
 2. **Enable the Message Content Intent**, under **Bot → Privileged Gateway
    Intents**. Without it the bot connects but never sees a command, because
@@ -155,6 +162,49 @@ def run(engine: Engine, values: dict[str, str], source: str | None = None,
         asyncio.run(main())
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("stopped", flush=True)
+    except BaseException as error:
+        #  The two ways a Discord bot fails to start are a token Discord will
+        #  not accept and an intent the portal has not granted. Both arrive as
+        #  a library exception from inside a TaskGroup, which would otherwise
+        #  reach the operator as a traceback saying neither what is wrong nor
+        #  where to fix it.
+        advice = diagnose(error, discord)
+        if advice is None:
+            raise
+        print(advice, file=sys.stderr, flush=True)
+        raise SystemExit(1) from None
+
+
+def diagnose(error: BaseException, discord) -> str | None:
+    """Advice for a startup failure, or None if it is not one we know.
+
+    `discord` is passed in rather than imported so this stays callable
+    without the extra installed.
+    """
+    for cause in _flatten(error):
+        if isinstance(cause, discord.LoginFailure):
+            return (
+                "Discord refused the token. It is read from, in order of "
+                "precedence: -s, $LYO_DISCORD_TOKEN or $DISCORD_TOKEN, "
+                "adapter.discord.token, then a .env file -- `lyo run --check` "
+                "prints which one was used. If it is the right one, it may "
+                "have been revoked: Reset Token in the developer portal "
+                "issues a new one.")
+        if isinstance(cause, discord.PrivilegedIntentsRequired):
+            return (
+                "Discord has not granted the Message Content Intent, without "
+                "which a bot cannot read a command. Enable it under Bot -> "
+                "Privileged Gateway Intents in the developer portal, then "
+                "start again. `lyo adapters --setup` has the rest of the "
+                "portal setup.")
+    return None
+
+
+def _flatten(error: BaseException) -> list[BaseException]:
+    """An exception and, for a group, everything inside it."""
+    if isinstance(error, BaseExceptionGroup):
+        return [error, *(c for e in error.exceptions for c in _flatten(e))]
+    return [error]
 
 
 class Bot:
@@ -208,7 +258,13 @@ class Bot:
             self._schedule(self._lapse(message.channel, outcome.expires_in))
 
     def _resolve_mentions(self, message, text: str) -> str:
-        """Turn <@123> into a bare id, and a lone @name into that user's id."""
+        """Turn a real mention, <@123>, into the bare id the engine binds on.
+
+        A typed `@name` needs nothing here: it arrives as plain text and the
+        engine matches it against character names. That is why this adapter
+        does not ask for the privileged members intent -- a bot the portal has
+        not granted it cannot connect at all.
+        """
         for user in message.mentions:
             text = re.sub(rf"<@!?{user.id}>", str(user.id), text)
         return text

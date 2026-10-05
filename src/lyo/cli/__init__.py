@@ -229,7 +229,9 @@ def run(source: Path | None, adapter: str | None, overrides: tuple[str, ...],
     """Serve a game to a chat platform.
 
     Source and adapter default to `game.main.source` and `adapter.main.name`.
-    Settings come from configuration, then LYO_<ADAPTER>_<KEY>, then -s.
+    Settings come from a `.env` beside the project, then configuration, then
+    LYO_<ADAPTER>_<KEY> (or <ADAPTER>_<KEY>, so an existing DISCORD_TOKEN is
+    picked up), then -s.
     """
     from lyo.engine import Engine
     from lyo.lang.check import check as check_source
@@ -256,19 +258,24 @@ def run(source: Path | None, adapter: str | None, overrides: tuple[str, ...],
         known = ", ".join(sorted(found)) or "none"
         raise click.ClickException(f"no adapter called {adapter!r} (have: {known})")
 
-    values = _settings(chosen, overrides, config)
+    origins: dict[str, str] = {}
+    values = _settings(chosen, overrides, config, _db_path(db), origins)
     missing = [s.key for s in chosen.settings if s.required and not values.get(s.key)]
     if missing:
         hints = ", ".join(f"adapter.{adapter}.{key}" for key in missing)
+        names = ", ".join(_env_names(adapter, missing[0]))
+        looked = ", ".join(str(p) for p in _env_files(_db_path(db))[:2])
         raise click.ClickException(
             f"{adapter} needs {hints}. Set it with "
             f"`lyo set adapter.{adapter}.{missing[0]}=...` then "
-            f"`lyo commit`, or pass -s.")
+            f"`lyo commit`, or pass -s, or put {names} in the environment "
+            f"or in a .env file ({looked}).")
 
     world = report.world
     click.secho(f"{world.title or source.name}", bold=True, nl=False)
     click.echo(f" -- {len(world.locations)} locations, {len(world.verbs)} verbs, "
                f"serving over {adapter}")
+    _report_settings(chosen, values, origins, verbose=check)
     if check:
         click.secho("checks passed; not connecting", fg="green")
         store.close()
@@ -290,19 +297,81 @@ def run(source: Path | None, adapter: str | None, overrides: tuple[str, ...],
         store.close()
 
 
-def _settings(adapter, overrides: tuple[str, ...], config) -> dict[str, str]:
-    """Declared default, then configuration, then environment, then -s."""
+def _report_settings(adapter, values: dict[str, str],
+                     origins: dict[str, str], verbose: bool) -> None:
+    """Say where each setting came from -- never what a secret one is.
+
+    Which of four places the token came from is the first thing to check when
+    a bot will not connect, and the only part of that answer the rest of this
+    output does not already give. Quiet unless a `.env` was involved, since
+    that is the surprising case; `--check` prints the lot.
+    """
+    for setting in adapter.settings:
+        origin = origins.get(setting.key)
+        if origin is None or (not verbose and ".env" not in origin):
+            continue
+        shown = "(hidden)" if setting.secret else f"= {values[setting.key]!r}"
+        click.secho(f"  {setting.key} {shown} from {origin}", fg="bright_black")
+
+
+def _env_names(adapter: str, key: str) -> tuple[str, ...]:
+    """The variables that carry one setting, most specific first.
+
+    The bare `DISCORD_TOKEN` is there because that is the name every
+    discord.py tutorial, and the bot this engine replaces, already uses. It
+    falls out of the UCI path rather than being special-cased: section plus
+    option, which also gives WEBUI_TOKEN and DISCORD_PREFIX.
+    """
+    return (f"LYO_{adapter}_{key}".upper(), f"{adapter}_{key}".upper())
+
+
+def _env_files(db: Path) -> list[Path]:
+    from lyo import env as env_file
+
+    return env_file.candidates(Path.cwd(), db)
+
+
+def _settings(adapter, overrides: tuple[str, ...], config,
+              db: Path | None = None,
+              origins: dict[str, str] | None = None) -> dict[str, str]:
+    """Default, then a `.env`, then configuration, then environment, then -s.
+
+    A `.env` sits below configuration because the file is whatever the host
+    happens to have; `lyo set` is what its operator chose. An exported
+    variable sits above both, being the most immediate of the three.
+    """
     import os
 
-    values: dict[str, str] = {
-        s.key: s.default for s in adapter.settings if s.default is not None
-    }
-    values.update(config.live("adapter", adapter.name))
+    from lyo import env as env_file
+
+    where = origins if origins is not None else {}
+    values: dict[str, str] = {}
+
+    def take(key: str, value: str | None, source: str) -> None:
+        if not value:
+            return
+        values[key] = value
+        where[key] = source
 
     for setting in adapter.settings:
-        env = os.environ.get(f"LYO_{adapter.name}_{setting.key}".upper())
-        if env:
-            values[setting.key] = env
+        take(setting.key, setting.default, "default")
+
+    found = env_file.read(Path.cwd(), db or Path.cwd())
+    for setting in adapter.settings:
+        for name in _env_names(adapter.name, setting.key):
+            if name in found:
+                value, path = found[name]
+                take(setting.key, value, f"{name} in {path}")
+                break
+
+    for key, value in config.live("adapter", adapter.name).items():
+        take(key, value, f"adapter.{adapter.name}.{key}")
+
+    for setting in adapter.settings:
+        for name in _env_names(adapter.name, setting.key):
+            if os.environ.get(name):
+                take(setting.key, os.environ[name], f"${name}")
+                break
 
     for pair in overrides:
         key, _, value = pair.partition("=")
@@ -311,8 +380,8 @@ def _settings(adapter, overrides: tuple[str, ...], config) -> dict[str, str]:
             if key.startswith(prefix):
                 key = key[len(prefix):]
                 break
-        values[key] = value.strip()
-    return {k: v for k, v in values.items() if v}
+        take(key, value.strip(), "-s")
+    return values
 
 
 # --------------------------------------------------------------- the file
@@ -725,13 +794,34 @@ def _warn_about_env(plan) -> None:
     """A token given by environment variable will not reach the service."""
     import os
 
-    leaked = [k for k in os.environ if k.startswith("LYO_") and k != "LYO_DB"]
+    from lyo import env as env_file
+
+    wanted = {name
+              for adapter in plugins.adapters().values()
+              for setting in adapter.settings
+              for name in _env_names(adapter.name, setting.key)}
+    leaked = sorted(name for name in wanted if os.environ.get(name))
     if leaked:
         click.secho(
-            f"note: {', '.join(sorted(leaked))} is set in your shell but will "
-            f"not reach the service. Put it in configuration instead: "
+            f"note: {', '.join(leaked)} is set in your shell but will not "
+            f"reach the service. Put it in configuration instead: "
             f"`lyo set adapter.discord.token=...` then `lyo commit`.",
             fg="yellow")
+
+    #  A .env does reach it, because lyo reads the file itself and every path
+    #  in the definition is absolute -- but only the ones near the state file,
+    #  since a service has no shell and Task Scheduler sets no working
+    #  directory.
+    served = env_file.candidates(plan.db)
+    reachable = [path for path in served if path.exists()]
+    unreachable = [path for path in env_file.candidates(Path.cwd())
+                   if path.exists() and path not in served]
+    for path in reachable:
+        click.secho(f"note: {path} will be read by the service.", fg="yellow")
+    for path in unreachable:
+        click.secho(
+            f"note: {path} will not be read by the service, which looks "
+            f"beside {plan.db} instead.", fg="yellow")
 
 
 @service.command("uninstall")
