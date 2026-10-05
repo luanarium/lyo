@@ -17,3 +17,11 @@ lyo.db
 
 # the control socket
 *.sock
+
+# the original Kairos source, kept for reference only -- not part of this
+# project. It carries its own .venv and database.
+reference/
+bot/
+
+# a scratch note of mine, not part of the project
+resume.txt
