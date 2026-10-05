@@ -317,3 +317,37 @@ def test_pack_says_when_art_will_letterbox(tmp_path):
     assert result.exit_code == 0
     assert "label 64x64" in result.output
     assert "letterboxes" in result.output
+
+
+def test_bundle_refuses_a_file_git_does_not_track(tmp_path, monkeypatch):
+    """A new module left out of an archive is an import error on unpacking."""
+    import subprocess
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "docs").mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "tracked.py").write_text("x = 1\n")
+    subprocess.run(["git", "add", "tracked.py"], cwd=tmp_path, check=True)
+    (tmp_path / "src_new.py").write_text("y = 2\n")
+
+    result = run("bundle", "--force")
+    assert result.exit_code != 0
+    assert "neither tracked nor ignored" in result.output
+    assert "src_new.py" in result.output
+    assert not (tmp_path / "dist").exists()
+
+
+def test_bundle_can_be_told_to_include_them(tmp_path, monkeypatch):
+    import subprocess
+    import zipfile
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "docs").mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "src_new.py").write_text("y = 2\n")
+
+    result = run("bundle", "--force", "--with-untracked")
+    assert result.exit_code == 0, result.output
+    archive = next((tmp_path / "dist").glob("*.zip"))
+    assert any(n.endswith("src_new.py")
+               for n in zipfile.ZipFile(archive).namelist())

@@ -864,6 +864,12 @@ Documentation is generated from the code it describes, so the command tables,
 configuration paths and language declarations in these files cannot drift from
 what the software does.
 
+The archive is what git tracks, plus the documents just generated. A file that
+is neither tracked nor ignored is refused rather than quietly left out — a new
+module missing from an archive is an import error for whoever unpacks it. Commit
+it, add it to `.gitignore`, or pass `--with-untracked`. So the order is: write
+code, `lyo bundle --no-zip`, commit, `lyo bundle`.
+
 ## Terms
 
 {terms([

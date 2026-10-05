@@ -894,7 +894,10 @@ def service_status(name: str, db: Path | None) -> None:
               help="Regenerate every document, stale or not.")
 @click.option("-o", "--output", type=click.Path(path_type=Path),
               help="Where to write the archive. Defaults to dist/.")
-def bundle(skip_zip: bool, force: bool, output: Path | None) -> None:
+@click.option("--with-untracked", is_flag=True,
+              help="Bundle files git does not track yet, instead of refusing.")
+def bundle(skip_zip: bool, force: bool, output: Path | None,
+           with_untracked: bool) -> None:
     """Generate any documentation not yet written or updated, then zip it up.
 
     Documents are generated from the code they describe, so a brief cannot
@@ -920,24 +923,48 @@ def bundle(skip_zip: bool, force: bool, output: Path | None) -> None:
 
     if skip_zip:
         return
-    archive = _zip(root, output)
+    archive = _zip(root, output, with_untracked)
     click.secho(f"{archive}: {archive.stat().st_size:,} bytes", bold=True)
 
 
-def _zip(root: Path, output: Path | None) -> Path:
-    """Everything git tracks, plus whatever was just generated."""
+def _git(root: Path, *arguments: str) -> list[str] | None:
+    """Lines from one git command, or None if this is not a repository."""
     import subprocess
+
+    done = subprocess.run(["git", *arguments], capture_output=True, text=True,
+                          cwd=root, check=False)
+    if done.returncode != 0:
+        return None
+    return [line for line in done.stdout.splitlines() if line]
+
+
+def _zip(root: Path, output: Path | None, with_untracked: bool = False) -> Path:
+    """Everything git tracks, plus whatever was just generated."""
     import zipfile
 
     from lyo import __version__
 
-    listed = subprocess.run(["git", "ls-files"], capture_output=True, text=True,
-                            cwd=root, check=False)
-    if listed.returncode != 0:
+    listed = _git(root, "ls-files")
+    if listed is None:
         raise click.ClickException("not a git repository, so there is nothing "
                                    "to bundle -- `--no-zip` still writes docs")
 
-    files = {line for line in listed.stdout.splitlines() if line}
+    files = set(listed)
+    #  A file that is neither tracked nor ignored is one the author has added
+    #  and not committed. Bundling from git silently leaves it out, which for
+    #  a new module means an archive that imports what it does not contain --
+    #  and a test suite missing the tests that would have said so. Refuse
+    #  instead: the fix is one `git add` away, and `.gitignore` is the way to
+    #  say a file is deliberately not part of the project.
+    stray = _git(root, "ls-files", "--others", "--exclude-standard") or []
+    if stray and not with_untracked:
+        shown = "\n".join(f"  {name}" for name in sorted(stray)[:10])
+        more = f"\n  ... and {len(stray) - 10} more" if len(stray) > 10 else ""
+        raise click.ClickException(
+            f"{len(stray)} file(s) are neither tracked nor ignored, so a "
+            f"bundle built from git would leave them out:\n{shown}{more}\n"
+            f"Commit them, add them to .gitignore, or pass --with-untracked.")
+    files |= set(stray)
     from lyo.docs.pages import DOCUMENTS
 
     files |= {d.path for d in DOCUMENTS if (root / d.path).exists()}
