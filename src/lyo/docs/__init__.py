@@ -143,3 +143,56 @@ def tables() -> list[str]:
 
     schema = (files("lyo.store") / "schema.sql").read_text(encoding="utf-8")
     return re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", schema)
+
+
+def handlers() -> list[str]:
+    """The events a `on <event>:` body may hang off."""
+    from lyo.lang.resolve import _BUILTIN_HANDLERS
+
+    return sorted(_BUILTIN_HANDLERS)
+
+
+def views() -> list[str]:
+    """What `show` can render. The engine owns these, not the game."""
+    from lyo.engine.views import _VIEWS
+
+    return sorted(_VIEWS)
+
+
+def slots() -> dict[str, str]:
+    """Item kinds that equip, and the slot each one fills."""
+    from lyo.lang.model import Item
+
+    return dict(Item.SLOTS)
+
+
+def placeholders() -> list[str]:
+    """Names a message may interpolate."""
+    from lyo.lang.resolve import _PLACEHOLDERS
+
+    return sorted(_PLACEHOLDERS)
+
+
+def qualifiers() -> list[str]:
+    """What narrows a `for every` selector, read out of the grammar."""
+    import re
+
+    from lyo.lang.parser import grammar_text
+
+    found = re.search(r"!qualifier: (.+)", grammar_text())
+    return re.findall(r'"(\w+)"', found.group(1)) if found else []
+
+
+def codes() -> list[str]:
+    """Every diagnostic lint can report, by the name it prints.
+
+    Read as the kebab-case literals in the resolver, which is where they are
+    written -- a list kept by hand here would be the one thing in this file
+    that could go stale.
+    """
+    import re
+
+    from importlib.resources import files
+
+    source = (files("lyo.lang") / "resolve.py").read_text(encoding="utf-8")
+    return sorted(set(re.findall(r'"([a-z]+(?:-[a-z]+)+)"', source)))
