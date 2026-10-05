@@ -2,16 +2,47 @@
 
 An adapter is free to render these itself -- this is the fallback so the engine
 is playable without one.
+
+A view may also come back as `Rendered`: the same text, plus the shape it was
+built from, so an adapter with something richer than a line of text -- a
+Discord embed, say -- can lay it out itself. Nothing here knows what an embed
+is; it reports a title and a list of headed blocks, and the plain text is the
+flattening of exactly that.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from lyo.engine.evaluate import Scope, evaluate
 from lyo.engine.state import Player, Sim
+from lyo.lang.model import Item
+
+
+@dataclass
+class Block:
+    """One headed section of a view: a shop's shelf, say."""
+
+    heading: str
+    body: str
+
+
+@dataclass
+class Rendered:
+    text: str
+    title: str = ""
+    body: str = ""
+    blocks: list[Block] = field(default_factory=list)
+
+
+def view(name: str, sim: Sim, actor: Player) -> Rendered:
+    """One view, structured if it has structure to report."""
+    out = _VIEWS.get(name, _unknown)(sim, actor)
+    return out if isinstance(out, Rendered) else Rendered(out)
 
 
 def render(name: str, sim: Sim, actor: Player) -> str:
-    return _VIEWS.get(name, _unknown)(sim, actor)
+    return view(name, sim, actor).text
 
 
 def _unknown(sim: Sim, actor: Player) -> str:
@@ -93,15 +124,43 @@ def _help(sim: Sim, actor: Player) -> str:
     return "\n".join(lines)
 
 
-def _stock(sim: Sim, actor: Player) -> str:
+def _stock(sim: Sim, actor: Player) -> Rendered:
     for shop in sim.world.shops:
-        if shop.at and shop.at.name == actor.location:
-            rows = []
-            for ref in shop.stock:
-                item = sim.world.items[ref.name]
-                rows.append(f"  {item.name} -- {item.cost} gold ({item.kind})")
-            return "\n".join(["For sale:", *rows])
-    return "There is no shop here."
+        if shop.at is None or shop.at.name != actor.location:
+            continue
+        blocks = [_shelf(sim.world.items[ref.name]) for ref in shop.stock]
+        gold = f"Your Gold: {actor.gold}"
+        text = "\n".join([shop.label, gold,
+                          *(f"{b.heading}\n{b.body}" for b in blocks)])
+        return Rendered(text=text, title=shop.label, body=gold,
+                        blocks=blocks)
+    return Rendered("There is no shop here.")
+
+
+def _shelf(item: Item) -> Block:
+    """One item as a shop shows it: a line to pick from, then the detail."""
+    icon = f"{item.icon} " if item.icon else ""
+    detail = [f"{icon}{item.name.upper()}", f"Type: {item.label}"]
+    #  What it is and what it confers read the same on a shelf.
+    stats = {**item.attrs, **item.grants}
+    if stats:
+        detail.append("Stats: " + " | ".join(
+            _stat(name, value, item) for name, value in stats.items()))
+    detail.append(f"Price: {item.cost} Gold")
+    if item.description:
+        detail.append(f'"{item.description}"')
+    return Block(f"{icon}{item.name} \u2014 {item.cost}g", "\n".join(detail))
+
+
+def _stat(name: str, value: int, item: Item) -> str:
+    """`+3 DAMAGE`, `-1 DEF`, `+5% CRIT CHANCE`.
+
+    The minus of a negative value is its own sign, so only a positive one
+    needs saying.
+    """
+    unit = "%" if name in item.percents else ""
+    sign = "+" if value >= 0 else ""
+    return f"{sign}{value}{unit} {name.replace('_', ' ').upper()}"
 
 
 _VIEWS = {

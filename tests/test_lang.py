@@ -233,3 +233,4 @@ def test_art_of_any_shape_is_kept_byte_for_byte():
     carried = [d for _, k, d in png_mod._walk(packed) if k == b"IDAT"]
     assert original == carried
     assert png_mod.unpack(packed) == markdown
+

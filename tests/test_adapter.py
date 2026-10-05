@@ -29,6 +29,17 @@ class PrivilegedIntentsRequired(Exception):
     """What discord raises when the portal has not granted an intent."""
 
 
+class Embed:
+    """Enough of discord.Embed to see what the adapter laid out."""
+
+    def __init__(self, title=None, description=None, colour=None):
+        self.title, self.description, self.colour = title, description, colour
+        self.fields: list[tuple[str, str, bool]] = []
+
+    def add_field(self, name, value, inline=True):
+        self.fields.append((name, value, inline))
+
+
 @dataclass
 class FakeDiscord:
     Forbidden = Forbidden
@@ -37,17 +48,27 @@ class FakeDiscord:
 
 
 @dataclass
+class RichDiscord(FakeDiscord):
+    """A discord that has embeds, which the plain stand-in deliberately has not."""
+
+    Embed = Embed
+
+
+@dataclass
 class Channel:
     name: str = "channel"
     sent: list[tuple[str, float | None]] = field(default_factory=list)
+    embeds: list = field(default_factory=list)
 
-    async def send(self, text, delete_after=None):
+    async def send(self, text=None, delete_after=None, embed=None):
         self.sent.append((text, delete_after))
+        if embed is not None:
+            self.embeds.append(embed)
         return object()
 
     @property
     def texts(self):
-        return [t for t, _ in self.sent]
+        return [t for t, _ in self.sent if t is not None]
 
 
 @dataclass
@@ -102,13 +123,14 @@ def world():
     return report.world
 
 
-def make(world, replies=(), owner=None, dms_open=True, clock=None):
+def make(world, replies=(), owner=None, dms_open=True, clock=None,
+         discord=None):
     engine = Engine(world, seed=7, clock=clock)
     client = Client(replies)
     settings = Settings.from_mapping(
         {"token": "x", "prefix": "!", "owner": owner or "",
          "notice_seconds": "3"})
-    bot = Bot(engine, client, settings, FakeDiscord(), str(WORLD))
+    bot = Bot(engine, client, settings, discord or FakeDiscord(), str(WORLD))
     user = User(1, dms_open=dms_open)
     channel = Channel()
     return engine, bot, user, channel
@@ -250,7 +272,7 @@ def test_the_shop_conversation_buys_and_closes(world):
     say(bot, user, channel, "!shop")
 
     dm = user.dm_channel.texts
-    assert any("For sale" in t for t in dm)
+    assert any("Oakhaven Village Shop" in t for t in dm)
     assert any("Bought Chipped Buckler" in t for t in dm)
     assert engine.sim.players["1"].inventory.get("Chipped Buckler") == 1
     assert not engine.talking("1")
@@ -326,3 +348,79 @@ def test_a_challenge_accepted_in_time_still_works(world):
     other, their_channel = User(2), Channel()
     say(bot, other, their_channel, "!accept")
     assert engine.sim.duel_of("1") is not None
+
+
+# ---------------------------------------------------------------- the layout
+
+def shop(world, **kwargs):
+    """Open the shop and hand back whatever reached the DM channel."""
+    engine, bot, user, channel = make(world, replies=["done"], **kwargs)
+    engine.register("1", "Brynn", "Warrior")
+    engine.sim.players["1"].gold = 60
+    say(bot, user, channel, "!shop")
+    return engine, user.dm_channel
+
+
+def test_a_shop_becomes_an_embed_titled_after_itself(world):
+    _, dm = shop(world, discord=RichDiscord())
+    assert len(dm.embeds) == 1, "the shelf is one embed, not twelve messages"
+    embed = dm.embeds[0]
+    assert embed.title == "🏪 Oakhaven Village Shop", "the badge is the adapter's"
+    assert "Your Gold: **60**" in embed.description
+    assert "🪙" in embed.description, "a glyph for a line the engine wrote"
+    assert embed.colour == 0xE67E22
+
+
+def test_every_stocked_item_is_one_field_in_shelf_order(world):
+    _, dm = shop(world, discord=RichDiscord())
+    fields = dm.embeds[0].fields
+    assert len(fields) == 12
+    #  A price glued to its `g` is left alone by the number-bolding rule,
+    #  which is how the Kairos bot wrote this line too.
+    assert [name for name, _, _ in fields][:3] == [
+        "⚔️ Notched Iron Shortsword — 25g",
+        "🏹 Splintered Oak Bow — 30g",
+        "🪄 Apprentice's Ash Staff — 35g",
+    ]
+    assert all(inline is False for _, _, inline in fields)
+
+
+def test_a_field_carries_the_type_stats_price_and_flavour(world):
+    _, dm = shop(world, discord=RichDiscord())
+    detail = dict((n, v) for n, v, _ in dm.embeds[0].fields)
+    sword = detail["⚔️ Notched Iron Shortsword — 25g"]
+    assert sword.splitlines() == [
+        "⚔️ NOTCHED IRON SHORTSWORD",
+        "Type: Main Hand",
+        "Stats: +**3** DAMAGE | +**5**% CRIT CHANCE",
+        "Price: **25** Gold",
+        '"Dull near the hilt, but the edge is sharp enough to take down '
+        'cellar rats."',
+    ]
+
+
+def test_a_negative_stat_keeps_its_own_sign(world):
+    _, dm = shop(world, discord=RichDiscord())
+    detail = " ".join(v for _, v, _ in dm.embeds[0].fields)
+    assert "-**1** DEF" in detail, "the bow trades defence for reach"
+    assert "+-" not in detail
+
+
+def test_without_embeds_the_shelf_still_arrives_as_text(world):
+    #  The plain stand-in has no Embed, standing in for any adapter that
+    #  cannot lay one out. Nothing may be lost.
+    _, dm = shop(world)
+    assert dm.embeds == []
+    shelf = "\n".join(dm.texts)
+    assert "Oakhaven Village Shop" in shelf
+    assert "NOTCHED IRON SHORTSWORD" in shelf
+    assert "Type: Main Hand" in shelf
+    assert "cellar rats" in shelf
+
+
+def test_an_ordinary_message_is_never_dressed_up_as_an_embed(world):
+    engine, bot, user, channel = make(world, discord=RichDiscord())
+    engine.register("1", "Brynn", "Warrior")
+    say(bot, user, channel, "!look")
+    assert channel.embeds == []
+    assert channel.texts, "it went as text"

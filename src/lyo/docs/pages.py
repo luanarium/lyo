@@ -273,10 +273,32 @@ item "Health Potion" is consumable:
     refuse "You are already at full health." when hp is max_hp
     take 1 item from player
     restore 8 hp
+
+item "Splintered Oak Bow" is a weapon:
+  4 damage scaling agi, -1 def, 5% crit_chance
+  costs 30 gold
+  worn on "Main Hand"
+  shown as "🏹"
+  "Strung with coiled hemp."
 ```
 
 A refusal aborts the rest of the body, which is why a potion drunk at full
 health is not consumed.
+
+A stat may be negative or written as a percentage; `5% crit_chance` is a way
+of spelling 5, not a new kind of number. `worn on` and `shown as` are for a
+player's eyes only — a label for the slot and a glyph — so a game can say
+`Hands` without the engine growing a hands slot. The quoted line is the item's
+flavour text. All three show up wherever an item is listed at length, which
+today means a shop.
+
+```game
+shop at "Oakhaven Village":
+  named "Oakhaven Village Shop"
+  stocks "Splintered Oak Bow", "Chipped Buckler"
+```
+
+`named` is optional; a shop with no name of its own is called after its town.
 
 ### Verbs
 
@@ -561,6 +583,22 @@ for message in outcome.messages:
 A `lyo_present` implementation restyles outgoing text, receiving the message's
 `kind` — a view's name, or `refusal` — so a platform can badge or format by
 category.
+
+### Laying out more than a line
+
+A message is always complete as `text`. A view that has structure also reports
+it, so an adapter with a richer surface can lay it out instead:
+
+| field | what it is |
+|---|---|
+| `title` | the view's own heading, if it has one |
+| `body` | the lines between the title and the blocks |
+| `blocks` | a list of `heading` / `body` sections |
+
+`text` is the flattening of exactly those three, so an adapter that ignores
+them loses nothing. The Discord adapter turns a shop's blocks into embed
+fields; the browser adapter prints the text. Which view reports structure is
+the engine's business, not a game's — a game says `show stock` either way.
 
 ## Conversations
 
@@ -956,7 +994,13 @@ and a verb's slots resolve by longest trailing match, so
 
 **Your own wording for everything said.** Messages live in the game, not the
 adapter: `refuse`, `say`, an `npc`'s line, a flow's prompts and its timeout
-notice. Emoji included — the engine never writes a sentence of its own.
+notice. Emoji included.
+
+The exception is a `show`n view. Its scaffolding is the engine's — `Type:`,
+`Price:`, `Your Gold:` — because the engine is what assembles it. What a game
+puts inside one is still the game's: an item's name, its flavour line, its
+`shown as` glyph and its `worn on` label, and a shop's `named`. A platform
+badge like the shop's 🏪 is the adapter's, not either.
 
 ## What the game decides, and what the platform decides
 

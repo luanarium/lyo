@@ -56,6 +56,8 @@ item_stmt: "id" NAME _NL                                     -> identifier
          | "costs" quantity _NL                              -> costs
          | "grants" quantity_list _NL                        -> grants
          | "also" "known" "as" string_list _NL               -> aliases
+         | "shown" "as" STRING _NL                           -> icon
+         | "worn" "on" STRING _NL                            -> worn
          | handler
 
 class_decl: "class" STRING ":" _NL _INDENT class_stmt+ _DEDENT
@@ -95,6 +97,7 @@ rules_stmt: "define" NAME "as" expr _NL                      -> define
 
 shop_decl: "shop" "at" STRING ":" _NL _INDENT shop_stmt+ _DEDENT
 shop_stmt: "stocks" string_list _NL                          -> stocks
+         | "named" STRING _NL                                -> shop_name
 
 // ===================== statements =====================
 
@@ -196,7 +199,7 @@ amount_list: amount ("," amount)*
 amount: "all" NAME                                           -> all_of
       | expr NAME                                            -> of
 quantity_list: quantity ("," quantity)*
-quantity: NUMBER NAME ("scaling" NAME)?
+quantity: [MINUS] (NUMBER | PERCENT) NAME ("scaling" NAME)?
 range: NUMBER "to" NUMBER
 chance: PERCENT "of" "the" "time"
 name_list: NAME ("," NAME)*
@@ -216,6 +219,7 @@ OPTIONAL: "?"
 NAME: /[a-zA-Z_][a-zA-Z_0-9]*/
 NUMBER: /\d+/
 PERCENT: /\d+%/
+MINUS: "-"
 STRING: /"[^"\n]*"/
 COMMENT: /#[^\n]*/
 _NL: /(\r?\n[\t \f]*)+/

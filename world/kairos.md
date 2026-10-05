@@ -165,14 +165,23 @@ item "Fists" is the default weapon:
 item "Rusty Cleaver" is a weapon:
   2 damage scaling str
   costs 20 gold
+  worn on "Main Hand"
+  shown as "🔪"
+  "Repurposed from the local butcher shop. Heavily tarnished, but inflicts nasty cuts."
 
 item "Padded Sling" is a weapon:
-  2 damage scaling agi
+  2 damage scaling agi, 10% hit_chance_vs_agile
   costs 15 gold
+  worn on "Main Hand"
+  shown as "🎯"
+  "A simple leather strap and a pocket full of river stones. Surprisingly effective."
 
 item "Apprentice's Ash Staff" is a weapon:
-  2 damage scaling int
+  2 damage scaling int, 5 max_mp
   costs 35 gold
+  worn on "Main Hand"
+  shown as "🪄"
+  "Carved from young ash wood. Still faintly hums with lingering leyline energy."
 
 item "Apprentice Staff" is a weapon:
   3 damage scaling int
@@ -181,15 +190,21 @@ item "Dual Daggers" is a weapon:
   3 damage scaling agi
 
 item "Notched Iron Shortsword" is a weapon:
-  3 damage scaling str
+  3 damage scaling str, 5% crit_chance
   costs 25 gold
+  worn on "Main Hand"
+  shown as "⚔️"
+  "Dull near the hilt, but the edge is sharp enough to take down cellar rats."
 
 item "Iron Sword" is a weapon:
   4 damage scaling str
 
 item "Splintered Oak Bow" is a weapon:
-  4 damage scaling agi
+  4 damage scaling agi, -1 def
   costs 30 gold
+  worn on "Main Hand"
+  shown as "🏹"
+  "Strung with coiled hemp. Shoots straight if you don't pull back too hard."
 
 item "Warhammer" is a weapon:
   5 damage scaling str
@@ -212,6 +227,9 @@ item "Robes" is body armor:
 item "Thick Leather Gloves" is body armor:
   1 def
   costs 15 gold
+  worn on "Hands"
+  shown as "🧤"
+  "Rough-stitched work gloves. Keeps your hands safe from splinters and minor scratches."
 
 item "Leather Armor" is body armor:
   2 def
@@ -219,14 +237,23 @@ item "Leather Armor" is body armor:
 item "Reinforced Tunic" is body armor:
   2 def
   costs 20 gold
+  worn on "Body"
+  shown as "👕"
+  "Layered canvas reinforced with scraps of cured leather. Standard traveler wear."
 
 item "Novice Weaver's Robe" is body armor:
-  2 def
+  1 def, 5 max_mp
   costs 28 gold
+  worn on "Body"
+  shown as "🧥"
+  "Lightweight linen stitched with basic protective ward runes along the hem."
 
 item "Boiled Leather Vest" is body armor:
-  3 def
+  3 def, -1 evasion
   costs 28 gold
+  worn on "Body"
+  shown as "🥋"
+  "Stiff and smells like pine tar, but it'll turn a goblin's rusty blade."
 
 item "Chainmail" is body armor:
   4 def
@@ -234,6 +261,9 @@ item "Chainmail" is body armor:
 item "Chipped Buckler" is a shield:
   1 def
   costs 22 gold
+  worn on "Off Hand"
+  shown as "🛡️"
+  "A small wooden shield bound with dented iron bands. Fits snugly on the forearm."
 
 item "Wooden Shield" is a shield:
   2 def
@@ -264,10 +294,16 @@ item "Mana Potion" is consumable:
 item "Lucky Copper Coin" is an accessory:
   grants 1 luck
   costs 25 gold
+  worn on "Trinket"
+  shown as "🪙"
+  "Worn completely smooth on one side. The blacksmith swears it brings good fortune."
 
 item "Encumbered Miner's Lantern" is an accessory:
   grants 1 def
   costs 30 gold
+  worn on "Off Hand"
+  shown as "🏮"
+  "Flickers with a steady yellow flame. Essential if you plan on exploring the Abandoned Cellar."
 
 item "Spellbook" is a trinket:
   "Dense, annotated, and of no use in a fight."
@@ -496,7 +532,7 @@ flow shop:
   refuse "❌ There is no shop here." unless here.shop
   show stock
   loop:
-    ask choice: "Name an item to buy, or say done."
+    ask choice: "Reply with an item name to buy it, or done when you're finished."
       accepts "done", "exit", "leave", "cancel", "quit" to stop
       accepts any item in stock to buy it
       reprompts forever
@@ -508,11 +544,12 @@ runs out.
 
 ```game
 shop at "Oakhaven Village":
-  stocks "Padded Sling", "Thick Leather Gloves", "Rusty Cleaver"
-  stocks "Reinforced Tunic", "Chipped Buckler", "Notched Iron Shortsword"
-  stocks "Lucky Copper Coin", "Boiled Leather Vest", "Novice Weaver's Robe"
-  stocks "Splintered Oak Bow", "Encumbered Miner's Lantern"
-  stocks "Apprentice's Ash Staff"
+  named "Oakhaven Village Shop"
+  stocks "Notched Iron Shortsword", "Splintered Oak Bow"
+  stocks "Apprentice's Ash Staff", "Rusty Cleaver", "Padded Sling"
+  stocks "Reinforced Tunic", "Boiled Leather Vest", "Novice Weaver's Robe"
+  stocks "Chipped Buckler", "Thick Leather Gloves"
+  stocks "Lucky Copper Coin", "Encumbered Miner's Lantern"
 ```
 
 ## Duels

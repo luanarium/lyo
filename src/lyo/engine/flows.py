@@ -125,8 +125,10 @@ class Conversation:
         name = self.turn.values.pop("view", None)
         if name:
             from lyo.engine import views
-            self.turn.say(views.render(name, self.engine.sim, self.turn.actor),
-                          self.turn.private, kind=name)
+            shown = views.view(name, self.engine.sim, self.turn.actor)
+            self.turn.say(shown.text, self.turn.private, kind=name,
+                          title=shown.title, body=shown.body,
+                          blocks=shown.blocks)
 
     def _break_loop(self) -> None:
         while self._frames:
@@ -150,7 +152,8 @@ class Conversation:
                 options = self._offered(str(option.children[0]))
             elif option.data == "timeout":
                 quantity = option.children[0]
-                timeout = float(str(quantity.children[0]))
+                kids = [c for c in quantity.children if c is not None]
+                timeout = float(str(kids[0]).rstrip("%"))
             elif option.data == "reprompts":
                 reprompts = True
 

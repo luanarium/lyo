@@ -108,16 +108,35 @@ def _named(tree: Tree, name: str) -> list[Tree]:
 
 
 def _quantities(tree: Tree) -> list[tuple[int, str, str | None]]:
-    """Read a quantity_list into (amount, unit, scaling) triples."""
+    """Read a quantity_list into (amount, unit, scaling) triples.
+
+    A quantity may be negative (`-1 def`) or written as a percentage
+    (`5% crit_chance`); both come back as a plain signed int, since a
+    percentage is only a way of spelling a number here. Which units were
+    written that way is `_percent_units`, for whoever has to print them.
+    """
     out = []
     for group in _named(tree, "quantity_list") or [tree]:
         for q in _named(group, "quantity"):
             kids = [c for c in q.children if c is not None]
-            amount = int(str(kids[0]))
+            sign, kids = (-1, kids[1:]) if str(kids[0]) == "-" else (1, kids)
+            amount = sign * int(str(kids[0]).rstrip("%"))
             unit = str(kids[1])
             scaling = str(kids[2]) if len(kids) > 2 else None
             out.append((amount, unit, scaling))
     return out
+
+
+def _percent_units(tree: Tree) -> set[str]:
+    """The units in a quantity_list written as a percentage, not a count."""
+    found = set()
+    for group in _named(tree, "quantity_list") or [tree]:
+        for q in _named(group, "quantity"):
+            kids = [c for c in q.children if c is not None]
+            kids = kids[1:] if str(kids[0]) == "-" else kids
+            if str(kids[0]).endswith("%"):
+                found.add(str(kids[1]))
+    return found
 
 
 # ----------------------------------------------------------------- resolver
@@ -252,13 +271,19 @@ class _Resolver:
                     item.attrs[unit] = amount
                     if scaling:
                         item.scales = scaling
+                item.percents |= _percent_units(stmt)
             elif stmt.data == "costs":
                 for amount, _unit, _ in _quantities(stmt):
                     item.cost = amount
             elif stmt.data == "grants":
                 item.grants.update({u: a for a, u, _ in _quantities(stmt)})
+                item.percents |= _percent_units(stmt)
             elif stmt.data == "aliases":
                 item.aliases += [_text(t) for t in stmt.children[0].children]
+            elif stmt.data == "icon":
+                item.icon = _text(stmt.children[0])
+            elif stmt.data == "worn":
+                item.worn = _text(stmt.children[0])
             elif stmt.data == "handler":
                 item.handlers.add(str(stmt.children[0]))
         if self._claim("item", name, node):
@@ -397,6 +422,8 @@ class _Resolver:
             stmt = _unwrap(stmt)
             if stmt.data == "stocks":
                 shop.stock += [_ref(t) for t in stmt.children[0].children]
+            elif stmt.data == "shop_name":
+                shop.title = _text(stmt.children[0])
         self.world.shops.append(shop)
 
     # ----------------------------------------------------------- validate

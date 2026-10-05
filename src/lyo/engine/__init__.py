@@ -480,5 +480,6 @@ class Engine:
     def _render_view(self, turn: Turn) -> None:
         name = turn.values.get("view")
         if name:
-            turn.say(views.render(name, self.sim, turn.actor), turn.private,
-                     kind=name)
+            shown = views.view(name, self.sim, turn.actor)
+            turn.say(shown.text, turn.private, kind=name,
+                     title=shown.title, body=shown.body, blocks=shown.blocks)

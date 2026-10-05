@@ -86,10 +86,24 @@ class Item(Decl):
     is_default: bool = False
     description: str = ""
     attrs: dict[str, int] = field(default_factory=dict)
+    percents: set[str] = field(default_factory=set)
+    """Which attrs were written `5% crit_chance` rather than `5 crit_chance`.
+
+    Display only. A percentage is a way of spelling a number, so the value is
+    an ordinary int everywhere else.
+    """
     scales: str | None = None
     cost: int | None = None
     grants: dict[str, int] = field(default_factory=dict)
     aliases: list[str] = field(default_factory=list)
+    icon: str = ""
+    worn: str = ""
+    """What to call this item's slot to a player: `Main Hand`, `Trinket`.
+
+    The engine equips by `slot` below, which is derived from the kind and is
+    the same four places it has always been. This is the label only, so a game
+    can say `Hands` without the engine having to grow a hands slot.
+    """
     handlers: set[str] = field(default_factory=set)
 
     SLOTS = {"weapon": "weapon", "body armor": "armor", "shield": "shield",
@@ -98,6 +112,11 @@ class Item(Decl):
     @property
     def slot(self) -> str | None:
         return self.SLOTS.get(self.kind)
+
+    @property
+    def label(self) -> str:
+        """The player-facing name for where this is worn."""
+        return self.worn or self.kind.title()
 
 
 @dataclass
@@ -161,6 +180,12 @@ class Offer(Verb):
 class Shop(Decl):
     at: Ref | None = None
     stock: list[Ref] = field(default_factory=list)
+    title: str = ""
+
+    @property
+    def label(self) -> str:
+        """What the shop calls itself. Named after its town if it has not said."""
+        return self.title or f"{self.name} Shop"
 
 
 @dataclass

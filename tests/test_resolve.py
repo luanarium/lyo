@@ -230,3 +230,60 @@ def test_syntax_error_is_reported_as_a_diagnostic_not_an_exception(tmp_path):
     report = check(broken)
     assert [d.code for d in report.errors] == ["syntax"]
     assert report.world is None
+
+
+# ------------------------------------------------- what a shelf needs to say
+
+SHELF = PRELUDE + '''
+location "Home":
+  "Somewhere."
+  has shop
+
+item "Bow" is a weapon:
+  4 damage scaling str, -1 def, 5% crit_chance
+  costs 30 gold
+  worn on "Main Hand"
+  shown as "🏹"
+  "Strung with coiled hemp."
+
+item "Coin" is an accessory:
+  grants 1 luck
+  costs 25 gold
+
+shop at "Home":
+  named "The Emporium"
+  stocks "Bow", "Coin"
+'''
+
+
+def shelf():
+    resolution = _resolve(SHELF)
+    assert not [d for d in resolution.diagnostics if d.severity == ERROR], \
+        [d.message for d in resolution.diagnostics]
+    return resolution.world
+
+
+def test_an_item_stat_may_be_negative_or_a_percentage():
+    bow = shelf().items["Bow"]
+    assert bow.attrs == {"damage": 4, "def": -1, "crit_chance": 5}
+    assert bow.percents == {"crit_chance"}, "a percentage is only a spelling"
+    assert bow.scales == "str", "the scaling survives the other stats"
+
+
+def test_an_item_carries_a_glyph_a_label_and_flavour():
+    bow = shelf().items["Bow"]
+    assert bow.icon == "🏹"
+    assert bow.worn == "Main Hand"
+    assert bow.label == "Main Hand"
+    assert bow.description == "Strung with coiled hemp."
+
+
+def test_an_unworn_item_falls_back_to_its_kind():
+    assert shelf().items["Coin"].label == "Accessory"
+
+
+def test_a_shop_is_named_after_its_town_unless_it_says_otherwise():
+    shop = shelf().shops[0]
+    assert shop.label == "The Emporium"
+    shop.title = ""
+    assert shop.label == "Home Shop"

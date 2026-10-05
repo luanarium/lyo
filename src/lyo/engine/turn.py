@@ -17,6 +17,16 @@ class Message:
     kind: str | None = None
     """A hint for presentation: a view's name, or "refusal"."""
 
+    title: str = ""
+    body: str = ""
+    blocks: list[Any] = field(default_factory=list)
+    """The shape `text` was flattened from, when a view reported one.
+
+    An adapter that can lay out more than a line -- an embed, a card -- builds
+    from these; everything else uses `text` and is none the wiser. See
+    `engine.views.Block`.
+    """
+
 
 @dataclass
 class Turn:
@@ -44,9 +54,11 @@ class Turn:
         return self.refusal is not None
 
     def say(self, text: str, private: bool | None = None,
-            kind: str | None = None) -> None:
+            kind: str | None = None, title: str = "", body: str = "",
+            blocks: list[Any] | None = None) -> None:
         self.messages.append(
-            Message(text, self.private if private is None else private, kind))
+            Message(text, self.private if private is None else private, kind,
+                    title, body, blocks or []))
 
     def refuse(self, text: str) -> None:
         self.refusal = text

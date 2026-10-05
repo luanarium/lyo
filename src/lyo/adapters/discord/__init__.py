@@ -30,6 +30,15 @@ EMOJI = {
     "inventory": "\U0001f392", "roster": "\U0001f465", "help": "❓",
     "stock": "\U0001f3ea",
 }
+
+#  A glyph for a line the engine writes itself. A game's own messages carry
+#  their emoji inline, but a view is rendered by the engine, which has no
+#  business knowing what a coin looks like.
+LABELS = {"Your Gold:": "\U0001fa99"}
+
+#  Embeds are coloured by the view they carry, the way a game has no opinion
+#  about either.
+COLOUR = {"stock": 0xE67E22}
 _NUMBER = re.compile(r"(?<![\w*])(\d+)(?![\w*])")
 
 
@@ -276,7 +285,7 @@ class Bot:
         private = [m for m in messages if m.private]
 
         for item in public:
-            await message.channel.send(self._style(item))
+            await self._send(message.channel, item)
 
         if not private:
             return
@@ -289,19 +298,64 @@ class Bot:
             return
         #  DMs are closed: fall back to the channel rather than losing the reply.
         for item in private:
-            await message.channel.send(self._style(item))
+            await self._send(message.channel, item)
 
     async def _dm(self, user, messages: list[Message]) -> bool:
         try:
             channel = user.dm_channel or await user.create_dm()
             for item in messages:
-                await channel.send(self._style(item))
+                await self._send(channel, item)
         except self.discord.Forbidden:
             return False
         return True
 
     def _style(self, message: Message) -> str:
         return lyo_present(message.text, message.kind, message.private)
+
+    # -------------------------------------------------------------- layout
+
+    async def _send(self, channel, message: Message, **extra) -> None:
+        """One message, as an embed when it has the shape for one."""
+        embed = self._embed(message)
+        if embed is None:
+            await channel.send(self._style(message), **extra)
+            return
+        await channel.send(embed=embed, **extra)
+
+    def _embed(self, message: Message):
+        """A Discord embed for a view that reported blocks, else None.
+
+        The engine hands over a title, a body and a list of headed blocks; what
+        those become is this side's business. Without blocks -- every ordinary
+        message a game says -- there is nothing to lay out, and the plain text
+        goes as it always did.
+        """
+        if not message.blocks or not hasattr(self.discord, "Embed"):
+            return None
+        badge = EMOJI.get(message.kind or "")
+        title = f"{badge} {message.title}" if badge else message.title
+        embed = self.discord.Embed(
+            title=title or None, description=self._label(message.body) or None,
+            colour=COLOUR.get(message.kind or "", 0x2B2D31))
+        for block in message.blocks:
+            embed.add_field(name=self._plain(block.heading),
+                            value=self._plain(block.body), inline=False)
+        return embed
+
+    def _plain(self, text: str) -> str:
+        """A block's own text, styled but unbadged: the embed carries the badge."""
+        return lyo_present(text, None, False)
+
+    def _label(self, text: str) -> str:
+        """Prefix a line the engine wrote with its glyph, if it has one."""
+        lines = []
+        for line in self._plain(text).splitlines():
+            for label, glyph in LABELS.items():
+                if line.startswith(label):
+                    line = f"{glyph} {line}"
+                    break
+            lines.append(line)
+        return "\n".join(lines)
 
     def _schedule(self, coroutine) -> None:
         task = asyncio.ensure_future(coroutine)
@@ -316,7 +370,7 @@ class Bot:
     async def _lapse(self, channel, seconds: float) -> None:
         await asyncio.sleep(seconds)
         for notice in self.engine.expire_offers():
-            await channel.send(self._style(notice))
+            await self._send(channel, notice)
 
     # --------------------------------------------------------- conversations
 
@@ -348,7 +402,7 @@ class Bot:
         while True:
             for item in step.messages:
                 target = channel if item.private else message.channel
-                await target.send(self._style(item))
+                await self._send(target, item)
             if step.prompt is None:
                 return
 
@@ -367,7 +421,7 @@ class Bot:
                 step = self.engine.abandon_flow(uid)
                 for item in step.messages:
                     target = channel if item.private else message.channel
-                    await target.send(self._style(item))
+                    await self._send(target, item)
                 return
             step = self.engine.reply_flow(uid, reply.content)
 
