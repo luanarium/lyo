@@ -529,13 +529,17 @@ class _Resolver:
 
     def _validate_scaling(self) -> None:
         w = self.world
+        #  A track is conventionally named after the stat it grows, but what it
+        #  actually grows is what it `raises`, and the two need not match: a
+        #  `track faith_track` raising `faith` does grow faith.
+        grown = set(w.tracks) | {t.raises for t in w.tracks.values() if t.raises}
         for item in w.items.values():
-            if item.scales and item.scales not in w.tracks:
+            if item.scales and item.scales not in grown:
                 self.warn("untracked-stat",
                           f'"{item.name}" scales off `{item.scales}`, which no track grows',
                           item.tree)
         for spell in w.spells.values():
-            if spell.scales and spell.scales not in w.tracks:
+            if spell.scales and spell.scales not in grown:
                 self.warn("untracked-stat",
                           f'"{spell.name}" scales off `{spell.scales}`, which no track grows',
                           spell.tree)

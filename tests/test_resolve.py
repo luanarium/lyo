@@ -74,6 +74,38 @@ monster "Rat":
     assert result.ok, [d.message for d in result.errors]
 
 
+def test_a_track_grows_the_stat_it_raises_whatever_it_is_called():
+    """The name is a convention; `raises` is what actually grows the stat."""
+    resolution = _resolve(PRELUDE + """
+location "Home":
+  "Home."
+
+item "Twig" is a weapon:
+  1 damage scaling faith
+
+track faith_track:
+  advances when casting
+  raises faith by 1
+""")
+    assert not [d for d in resolution.diagnostics if d.code == "untracked-stat"]
+
+
+def test_a_stat_no_track_grows_is_still_warned_about():
+    resolution = _resolve(PRELUDE + """
+location "Home":
+  "Home."
+
+item "Twig" is a weapon:
+  1 damage scaling faith
+
+track luck:
+  advances when casting
+  raises luck by 1
+""")
+    warned = [d for d in resolution.diagnostics if d.code == "untracked-stat"]
+    assert warned and "faith" in warned[0].message
+
+
 def test_unknown_name_suggests_a_near_miss():
     result = _resolve(PRELUDE + '''
 location "Home":
