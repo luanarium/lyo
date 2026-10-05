@@ -54,14 +54,14 @@ def test_attack_power_is_weapon_plus_half_the_scaling_stat(game):
     game.command("u1", "travel north")
     out = game.command("u1", "attack wolf")
     #  Iron Sword 4 + str 8 // 2 == 8
-    assert "for 8" in texts(out)
+    assert "8 damage" in texts(out)
 
 
 def test_every_living_monster_retaliates(game):
     game.command("u1", "travel north")
     out = texts(game.command("u1", "attack wolf"))
     #  Goblin (3-2) + Wolf (6-2) == 5, reported once, with both named.
-    assert "Goblin Scout and Dire Wolf" in out and ": 5." in out
+    assert "Goblin Scout and Dire Wolf" in out and "hit back for 5" in out
 
 
 def test_retaliation_is_silent_when_nothing_is_left(game):
@@ -69,13 +69,13 @@ def test_retaliation_is_silent_when_nothing_is_left(game):
     game.command("u1", "travel east")  # Kingsroad, one Bandit
     for _ in range(4):
         out = texts(game.command("u1", "attack bandit"))
-    assert "Retaliation" not in out
+    assert "hit back" not in out
 
 
 def test_bare_hands_use_the_default_weapon(game):
     game.command("u1", "travel north")
     #  Fists 1 + str 8 // 2 == 5
-    assert "for 5" in texts(game.command("u1", "attack hands goblin"))
+    assert "5 damage" in texts(game.command("u1", "attack hands goblin"))
 
 
 def test_monster_health_is_shared_between_players(game):
@@ -85,7 +85,7 @@ def test_monster_health_is_shared_between_players(game):
     game.command("u1", "attack wolf")
     wolf = game.sim.rooms["Whispering Woods"]["Dire Wolf"]
     assert wolf.hp == 10
-    assert "leaving Dire Wolf on 3" in texts(game.command("u2", "attack wolf"))
+    assert "Dire Wolf — 💥 7 damage, 🩸 3 HP left" in texts(game.command("u2", "attack wolf"))
 
 
 def test_a_fallen_player_cannot_attack(game):
@@ -99,7 +99,7 @@ def test_casting_spends_magic_and_scales_off_intellect(game):
     game.command("u2", "travel north")
     out = texts(game.command("u2", "cast goblin"))
     #  3 + int 9 // 2 == 7
-    assert "for 7" in out
+    assert "7 damage" in out
     assert game.sim.players["u2"].mp == 15
 
 
@@ -271,7 +271,7 @@ def test_a_duel_ignores_the_room_and_nobody_hits_back(game):
     game.command("u2", "accept")
     before = game.sim.players["u1"].hp
     out = texts(game.command("u1", "attack"))
-    assert "Retaliation" not in out
+    assert "hit back" not in out
     assert game.sim.players["u1"].hp == before
 
 

@@ -123,7 +123,8 @@ def test_public_lines_reach_other_browsers_and_private_ones_do_not(session):
     seen = heard(session)
 
     command(session, "w1", "travel north")
-    assert any("travels to Whispering Woods" in line.text for line in seen)
+    assert any("Whispering Woods" in line.text and "travels to" in line.text
+               for line in seen)
 
     seen.clear()
     command(session, "w1", "inventory")
@@ -341,7 +342,7 @@ def test_the_whole_surface_over_a_real_socket(world, tmp_path):
                 {"session": "persistent", "player": "w1",
                  "text": "!travel north"})
             pushed = await asyncio.wait_for(reader.read(400), 5)
-            assert b"travels to Whispering Woods" in pushed
+            assert b"travels to" in pushed and b"Whispering Woods" in pushed
 
             #  A turn with no player named is a bad request, not a crash.
             try:

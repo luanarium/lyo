@@ -249,17 +249,17 @@ Both potions work. A potion drunk at full health is refused rather than wasted.
 item "Health Potion" is consumable:
   also known as "potion"
   on use:
-    refuse "You are already at full health." when hp is max_hp
+    refuse "⚠️ You are already at full health." when hp is max_hp
     take 1 item from player
     restore 8 hp
-    say "{player} drinks a Health Potion and recovers {restored} health."
+    say "🧪 {player} drinks a Health Potion — ❤️ {hp}/{max_hp} HP"
 
 item "Mana Potion" is consumable:
   on use:
-    refuse "Your reserve is already full." when mp is max_mp
+    refuse "⚠️ Your reserve is already full." when mp is max_mp
     take 1 item from player
     restore 8 mp
-    say "{player} drinks a Mana Potion and recovers {restored} magic."
+    say "🧪 {player} drinks a Mana Potion — 💧 {mp}/{max_mp} MP"
 
 item "Lucky Copper Coin" is an accessory:
   grants 1 luck
@@ -384,25 +384,25 @@ Anything long or private arrives by direct message.
 ```game
 verb attack <weapon?> <monster>:
   public
-  refuse "You have fallen. Drink a potion or walk to an inn." unless alive
+  refuse "💀 You have fallen. Use a potion, or walk to an inn." unless alive
   deal atk at least 1 to monster
-  say "{player} hits {monster} for {dealt}, leaving {monster} on {monster.hp}."
-  say "{monster} falls. Loot: {loot}" when monster.hp is 0 and not dueling
+  say "⚔️ {player} attacks {monster} — 💥 {dealt} damage, 🩸 {monster.hp} HP left"
+  say "☠️ {monster} is defeated! 🎁 {loot}" when monster.hp is 0 and not dueling
   then for every living monster here:
     deal its str - def at least 1 to player
-  say "Retaliation from {retaliators}: {taken}. {player} is on {hp}." when taken > 0
+  say "↩️ {retaliators} hit back for {taken} — ❤️ {player} on {hp} HP" when taken > 0
 
 verb cast <spell?> <monster>:
   public
-  refuse "You have fallen. Drink a potion or walk to an inn." unless alive
-  refuse "Not enough magic for that." when mp < spell.cost
+  refuse "💀 You have fallen. Use a potion, or walk to an inn." unless alive
+  refuse "💧 Not enough magic for that." when mp < spell.cost
   take spell.cost mp from player
   deal spell.damage at least 1 to monster
-  say "{player} casts {spell} at {monster} for {dealt}."
-  say "{monster} falls. Loot: {loot}" when monster.hp is 0 and not dueling
+  say "🔮 {player} casts {spell} at {monster} — 💥 {dealt} damage, 🩸 {monster.hp} HP left"
+  say "☠️ {monster} is defeated! 🎁 {loot}" when monster.hp is 0 and not dueling
   then for every living monster here:
     deal its str - def at least 1 to player
-  say "Retaliation from {retaliators}: {taken}. {player} is on {hp}." when taken > 0
+  say "↩️ {retaliators} hit back for {taken} — ❤️ {player} on {hp} HP" when taken > 0
 ```
 
 </details>
@@ -413,9 +413,9 @@ verb cast <spell?> <monster>:
 verb travel <exit>:
   also known as "go", "move"
   public
-  refuse "You cannot walk out of a duel." when dueling
+  refuse "❌ You cannot travel mid-duel. Finish the fight, or forfeit." when dueling
   move player to exit
-  say "{player} travels to {here}."
+  say "🥾 {player} travels to 📍 {here}."
 
 verb look:
   public
@@ -428,10 +428,10 @@ verb map:
 verb rest:
   also known as "sleep", "inn"
   public
-  refuse "There is no inn here. Try Oakhaven Village or Ironforge City." unless here.inn
-  refuse "You are already rested." when hp is max_hp and mp is max_mp
+  refuse "❌ There is no inn here. Inns: Oakhaven Village, Ironforge City." unless here.inn
+  refuse "🛏️ You are already fully rested." when hp is max_hp and mp is max_mp
   restore all hp, all mp
-  say "{player} sleeps soundly and wakes restored."
+  say "🛌 {player} rests at the inn — ❤️ {hp}/{max_hp} HP | 💧 {mp}/{max_mp} MP"
 ```
 
 </details>
@@ -446,13 +446,13 @@ verb use <item>:
 verb equip <item>:
   public
   equip item
-  say "{player} equips {item}."
+  say "🛡️ {player} equips {item}."
 
 verb buy <item>:
   public
-  refuse "There is no shop here." unless here.shop
+  refuse "❌ There is no shop here." unless here.shop
   buy item
-  say "{player} buys {item} for {item.cost} gold."
+  say "🛒 {player} buys {item} — 🪙 {gold} gold left"
 
 verb inventory:
   also known as "inv"
@@ -478,7 +478,7 @@ run in direct messages and both give up after two minutes of silence.
 ```game
 flow register:
   private
-  refuse "You already have a character." when registered
+  refuse "⚠️ You already have a registered character." when registered
   ask name: "What is your character's name?"
     accepts any text, trimmed
     times out after 120 seconds
@@ -487,13 +487,13 @@ flow register:
     reprompts forever
     times out after 120 seconds
   create player named name as chosen
-  say "{name} the {chosen} begins in {start}."
+  say "🛡️ {name} the {chosen} begins in 📍 {start}."
   on timeout:
-    say "Registration timed out or failed." publicly
+    say "⚠️ Registration timed out or failed." publicly
 
 flow shop:
   private
-  refuse "There is no shop here." unless here.shop
+  refuse "❌ There is no shop here." unless here.shop
   show stock
   loop:
     ask choice: "Name an item to buy, or say done."
@@ -528,9 +528,9 @@ offer duel from <player> to <player>:
   also known as "challenge"
   public
   requires both alive, both here
-  refuse "One of you is already dueling." when either dueling
-  refuse "They already have a challenge waiting." when target.challenged
-  expires after 60 seconds, saying "The challenge expired."
+  refuse "❌ One of you is already in a duel." when either dueling
+  refuse "❌ They already have a pending challenge." when target.challenged
+  expires after 60 seconds, saying "⌛ The challenge expired."
   accepted by verb accept
   declined by verb decline
   forfeited by verb forfeit
@@ -542,16 +542,16 @@ offer duel from <player> to <player>:
 
 verb accept:
   public
-  refuse "You have no challenge waiting." unless challenged
-  say "{player} accepts the challenge."
+  refuse "❌ You have no pending duel challenge." unless challenged
+  say "⚔️ {player} accepts — the duel begins!"
 
 verb decline:
   public
-  refuse "You have no challenge waiting." unless challenged
-  say "{player} declines the challenge."
+  refuse "❌ You have no pending duel challenge." unless challenged
+  say "🚫 {player} declines the duel challenge."
 
 verb forfeit:
   public
-  refuse "You are not in a duel." unless dueling
-  say "{player} concedes to {opponent}."
+  refuse "❌ You are not in a duel." unless dueling
+  say "🏳️ {player} forfeits the duel! 🏆 {opponent} wins."
 ```
