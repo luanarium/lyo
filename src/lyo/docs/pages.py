@@ -52,7 +52,14 @@ uv tool list               # what is installed
 ```
 
 Without installing, `uv run lyo ...` works inside the project, and
-`source .venv/bin/activate` gives one shell a bare `lyo`.
+`source .venv/bin/activate` — `.venv\\Scripts\\activate` on Windows — gives one
+shell a bare `lyo`.
+
+On Windows use PowerShell, where that install line works as written; `cmd.exe`
+takes the single quotes literally, so there it is
+`uv tool install --editable ".[discord]"`. Everything else is the same command
+on both hosts. [docs/deployment.md](docs/deployment.md) collects the handful of
+places where Windows behaves differently.
 
 ## Get playing
 
@@ -67,6 +74,15 @@ Or try it with no account at all, in a browser:
 ```bash
 lyo run -a webui                              # prints a URL; open it
 ```
+
+The page is a chat room with one of you in it: type the same commands, read the
+same output. Three things it has that a chat platform does not — switch which
+character you are, so one browser can duel itself; reset the simulation between
+rule changes; and load another gameworld by clicking the cover in the left
+margin, a `.md` file or a `.png` cartridge, checked before it is accepted and
+refused with the diagnostics `lyo lint` would give. It opens on a throwaway
+simulation that saves nothing, so poking at a game leaves no characters behind.
+[docs/platforms.md](docs/platforms.md) has the rest.
 
 Then in Discord: `!register` to make a character, `!look` to see where you are,
 `!attack wolf` to start a fight.
@@ -153,7 +169,9 @@ Python 3.11 or newer. The core depends on three packages, each of which has no
 dependencies of its own: `lark`, `pluggy`, `click`. `discord.py` arrives only
 with the `discord` extra, and nothing in the core imports it.
 
-Linux and Windows are both supported, including running as a service.
+Linux and Windows are both supported, including running as a service —
+systemd user units on one, Task Scheduler on the other, neither needing
+administrator rights.
 """
 
 
@@ -490,6 +508,11 @@ irc = "my_package.irc"
 `lyo adapters` then lists it, and its settings become configuration paths of the
 form `adapter.irc.server`.
 
+Two first-party adapters are worth reading as examples. `lyo.adapters.discord`
+is one with a platform SDK behind it; `lyo.adapters.webui` is one with no SDK at
+all — a local page over a hand-rolled HTTP server, which is the smaller of the
+two and shows the whole contract on its own.
+
 ## Installing one
 
 Discovery is by entry point, so an adapter has to live in the same environment
@@ -738,7 +761,76 @@ lyo set control.main.host=0.0.0.0 control.main.token=$(openssl rand -hex 16)
 lyo commit
 ```
 
+On Windows, where there is no `openssl` by default:
+
+```powershell
+lyo set control.main.host=0.0.0.0 control.main.token=$(python -c "import secrets; print(secrets.token_hex(16))")
+lyo commit
+```
+
 Run with `--no-control` to disable it entirely.
+
+## On Windows
+
+Everything is the same command. These are the places the host itself behaves
+differently, and what lyo does about each.
+
+**The shell.** PowerShell runs the examples as written. `cmd.exe` has no single
+quotes, so `uv tool install --editable '.[discord]'` becomes
+`uv tool install --editable ".[discord]"` there. A project virtual environment
+is activated with `.venv\\Scripts\\activate` rather than `source
+.venv/bin/activate`.
+
+**The service is a scheduled task**, registered with `schtasks` and triggered
+at logon, because that needs no administrator rights and no service wrapper.
+Three consequences:
+
+- Task Scheduler cannot set a working directory, so every path in the
+  registered command is absolute. `lyo service install --dry-run` prints it.
+- `schtasks` accepts at most 261 characters of command. Install refuses before
+  calling it rather than passing on a usage dump, and says what to shorten. A
+  checkout nearer the drive root is the usual fix.
+- `lyo service stop` ends the task, which terminates the process rather than
+  asking it to stop. Nothing is lost: the simulation is written after every
+  turn, not at exit.
+
+`lyo service status` reads the state out of `schtasks` output, which Windows
+translates, so on a non-English install the task line may say `unknown` while
+the `instance` line below it — which asks the running process directly — is
+still right.
+
+**Reload** has no SIGHUP to send, so `lyo reload` is the way. It works the same
+as on Linux, over the control channel.
+
+**The control channel is a loopback TCP port** rather than a Unix socket, since
+Windows has no `AF_UNIX` for asyncio. The port is recorded in the state file,
+so `lyo status` and `lyo reload` find it with no configuration. Still localhost
+only.
+
+**Ctrl-C** stops a run and unwinds it cleanly. Windows has no
+`add_signal_handler`, so instead of a handler cancelling the task group, the
+interrupt comes out of the loop as a `KeyboardInterrupt` and `asyncio.run`
+cancels whatever is still running as it leaves — the same cleanup by a
+different route, and the control channel's socket row is cleared either way.
+
+**Game files and line endings.** A game saved on Windows has CRLF line endings.
+The grammar takes them, but a markdown fence is matched as a whole line, so a
+CRLF document would have looked like one with no `game` blocks in it at all.
+Reading a path normalises that; so does the browser adapter's upload, which
+normalises whatever it is handed. `lyo unpack
+-o recovered.md` writes LF, which is what makes the round trip byte-identical —
+redirecting standard output instead (`lyo unpack x.png > y.md`) lets the shell
+translate the newlines, and the bytes will not match.
+
+**Non-ASCII output.** Games say things like `⚔️ Brynn attacks`. A Windows
+console handles that; a redirected stream would otherwise get the locale's code
+page and raise, so lyo widens its own output to UTF-8 at startup.
+
+**Offline assets for the browser adapter** take a plain Windows path or a
+Windows file URL — `lyo set adapter.webui.assets=C:\\quikchat` or
+`file:///C:/quikchat`. The adapter serves what is in that directory itself, so
+the page never has to load a script off the filesystem, which a browser would
+refuse.
 
 ## Bundling
 
@@ -757,6 +849,8 @@ what the software does.
 {terms([
     ("systemd user unit", "A service definition owned by your login, needing no root"),
     ("Task Scheduler", "The Windows equivalent used here, triggered at logon"),
+    ("schtasks", "The command that registers a scheduled task"),
+    ("CRLF", "Carriage return plus line feed: the Windows line ending"),
     ("control channel", "The local socket a running instance listens on"),
     ("SIGHUP", "The signal that conventionally means reload, which the unit sends"),
     ("SIGTERM", "The signal a service manager stops a process with"),
@@ -769,21 +863,28 @@ what the software does.
 DOCUMENTS = (
     Document("README.md", "lyo Engine", readme,
              ("src/lyo/cli/__init__.py", "src/lyo/adapters/discord/__init__.py",
+              "src/lyo/adapters/webui/__init__.py",
               "pyproject.toml", "src/lyo/lang/grammar/game.lark")),
     Document("docs/language.md", "The lyo language", language,
              ("src/lyo/lang/grammar/game.lark", "src/lyo/lang/model.py",
               "src/lyo/lang/resolve.py", "src/lyo/engine/execute.py")),
     Document("docs/cartridge.md", "One file, two forms", cartridge,
              ("src/lyo/cartridge/png.py", "src/lyo/cartridge/markdown.py")),
+    #  Both adapters' own words are the page, so either one changing makes it
+    #  stale -- that is the whole point of a page generated from what they
+    #  declare about themselves.
     Document("docs/platforms.md", "Platforms", platforms,
              ("src/lyo/adapters/discord/__init__.py",
+              "src/lyo/adapters/webui/__init__.py",
               "src/lyo/plugins/__init__.py")),
     Document("docs/adapters.md", "Writing an adapter", adapter_guide,
              ("src/lyo/plugins/__init__.py",
-              "src/lyo/adapters/discord/__init__.py")),
+              "src/lyo/adapters/discord/__init__.py",
+              "src/lyo/adapters/webui/__init__.py")),
     Document("docs/configuration.md", "Configuration", configuration,
              ("src/lyo/store/config.py", "src/lyo/store/schema.sql",
               "src/lyo/cli/__init__.py")),
     Document("docs/deployment.md", "Running it", deployment,
-             ("src/lyo/service/__init__.py", "src/lyo/control.py")),
+             ("src/lyo/service/__init__.py", "src/lyo/control.py",
+              "src/lyo/cli/__init__.py")),
 )
