@@ -29,14 +29,20 @@ class Unavailable(Exception):
         self.host, self.port, self.cause = host, port, cause
         import errno
 
-        if cause.errno == errno.EADDRINUSE:
+        #  Winsock numbers its own errors (WSAEADDRINUSE is 10048), and Python
+        #  passes those through untranslated, so each reason is a small set.
+        def one_of(*names: str) -> set[int]:
+            return {n for n in (getattr(errno, name, None) for name in names)
+                    if n is not None}
+
+        if cause.errno in one_of("EADDRINUSE", "WSAEADDRINUSE"):
             detail = (f"something is already listening on {host}:{port}. "
                       f"Stop it, or choose another port: "
                       f"`lyo run -a webui -s webui.port={port + 1}`")
-        elif cause.errno in (errno.EACCES, errno.EPERM):
+        elif cause.errno in one_of("EACCES", "EPERM", "WSAEACCES"):
             detail = (f"not permitted to bind {host}:{port}. Ports below 1024 "
                       f"need privileges; pick a higher one.")
-        elif cause.errno == errno.EADDRNOTAVAIL:
+        elif cause.errno in one_of("EADDRNOTAVAIL", "WSAEADDRNOTAVAIL"):
             detail = (f"no interface on this machine has the address {host}. "
                       f"Check `adapter.webui.host`.")
         elif cause.errno is None:
@@ -130,6 +136,21 @@ async def read_request(reader: asyncio.StreamReader) -> Request | None:
                    headers, body)
 
 
+#  Spelled out rather than asked of `mimetypes`, which on Windows reads the
+#  registry first and there answers `text/plain` for .js on some machines.
+#  The page loads app.js as a module, and a browser refuses a module served as
+#  anything but JavaScript, so the registry would decide whether the UI runs.
+TYPES = {".html": "text/html; charset=utf-8",
+         ".css": "text/css; charset=utf-8",
+         ".js": "text/javascript; charset=utf-8",
+         ".mjs": "text/javascript; charset=utf-8",
+         ".json": "application/json; charset=utf-8",
+         ".svg": "image/svg+xml",
+         ".png": "image/png",
+         ".ico": "image/x-icon",
+         ".woff2": "font/woff2"}
+
+
 class Static:
     """Files shipped beside this module, served by name."""
 
@@ -138,16 +159,23 @@ class Static:
 
     def read(self, name: str) -> Response | None:
         name = name.lstrip("/") or "index.html"
-        if "/" in name or ".." in name:
+        if "/" in name or "\\" in name or ".." in name:
             return None
         try:
             data = (self.root / name).read_bytes()
         except (FileNotFoundError, OSError, NotADirectoryError):
             return None
-        kind = mimetypes.guess_type(name)[0] or "application/octet-stream"
-        if kind.startswith("text/") or kind.endswith("javascript"):
-            kind += "; charset=utf-8"
-        return Response(200, data, kind)
+        return Response(200, data, type_of(name))
+
+
+def type_of(name: str) -> str:
+    suffix = Path(name).suffix.lower()
+    if suffix in TYPES:
+        return TYPES[suffix]
+    kind = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    if kind.startswith("text/") or kind.endswith("javascript"):
+        kind += "; charset=utf-8"
+    return kind
 
 
 Handler = Callable[[Request], Awaitable[Response | None]]

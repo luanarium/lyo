@@ -58,8 +58,10 @@ class Document:
     def write(self, root: Path) -> Path:
         target = root / self.path
         target.parent.mkdir(parents=True, exist_ok=True)
+        #  newline="": a document generated on Windows is the same bytes as
+        #  one generated here, so its hash does not depend on the host.
         target.write_text(f"{self.render().rstrip()}\n\n{self.stamp(root)}\n",
-                          encoding="utf-8")
+                          encoding="utf-8", newline="")
         return target
 
 

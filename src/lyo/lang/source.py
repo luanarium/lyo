@@ -65,11 +65,17 @@ def from_bytes(name: str, data: bytes) -> Source:
 
     A cartridge is recognised by its signature rather than its name, since
     nothing guarantees what a browser calls the file it hands over.
+
+    Line endings are normalised here, which reading a path gets for free.
+    A document written on Windows arrives with CRLF, and a fence is matched as
+    a whole line, so the carriage return left one unrecognised: the upload was
+    refused for having no `game` blocks at all, in a file that lints perfectly
+    well from disk.
     """
     if data.startswith(png_mod.SIGNATURE):
         return _from_markdown(name, png_mod.unpack(data))
     try:
-        text = data.decode("utf-8")
+        text = _newlines(data.decode("utf-8"))
     except UnicodeDecodeError as exc:
         raise ValueError(
             f"{name} is neither a PNG cartridge nor UTF-8 text") from exc
@@ -78,7 +84,15 @@ def from_bytes(name: str, data: bytes) -> Source:
     return _from_markdown(name, text)
 
 
+def _newlines(text: str) -> str:
+    """What opening a file in text mode would have done."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _from_markdown(origin: str, markdown: str) -> Source:
+    #  `raw` is shown back under a caret, so it has to be the same text the
+    #  line map counted: normalise once, and use it for both.
+    markdown = _newlines(markdown)
     tangled = tangle(markdown)
     return Source(origin=origin, text=tangled.text,
                   line_map=tangled.line_map, raw=markdown)

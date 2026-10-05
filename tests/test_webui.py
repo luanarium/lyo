@@ -266,6 +266,46 @@ def test_static_files_are_served_and_traversal_refused():
     assert static.read("nope.js") is None
 
 
+def test_the_module_script_is_served_as_javascript():
+    """A browser refuses a module served as anything else.
+
+    `mimetypes` answers from the registry first on Windows, where .js is
+    `text/plain` on some machines, so the type cannot come from there.
+    """
+    static = Static()
+    assert static.read("app.js").content_type == "text/javascript; charset=utf-8"
+    assert static.read("app.css").content_type == "text/css; charset=utf-8"
+    assert static.read("/").content_type == "text/html; charset=utf-8"
+
+
+def test_a_windows_path_separator_is_not_a_way_in():
+    assert Static().read("..\\..\\windows\\win.ini") is None
+
+
+def test_a_busy_port_is_recognised_by_either_platforms_number():
+    import errno
+
+    from lyo.adapters.webui.http import Unavailable
+
+    for name in ("EADDRINUSE", "WSAEADDRINUSE"):
+        number = getattr(errno, name, None)
+        if number is None:  # the other platform's spelling
+            continue
+        said = str(Unavailable("127.0.0.1", 8720, OSError(number, "in use")))
+        assert "already listening" in said, name
+
+
+def test_a_gameworld_written_on_windows_still_loads(host):
+    """CRLF arrives from a browser as it was typed, and the language is
+    indentation-sensitive -- reading a path normalises, so an upload must too."""
+    crlf = _elsewhere().replace("\n", "\r\n").encode()
+    ok, problems, info = host.load_gameworld("elsewhere.md", crlf)
+
+    assert ok, problems
+    assert info["title"] == "Elsewhere"
+    assert host.pick("ephemeral").engine.world.title == "Elsewhere"
+
+
 def test_a_token_is_only_required_when_one_is_set():
     plain = Server("127.0.0.1", 0)
     assert plain.permitted(Request("GET", "/", {}, {}))

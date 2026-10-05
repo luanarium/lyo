@@ -61,7 +61,9 @@ def test_pack_and_unpack_round_trip(tmp_path):
     cart, back = tmp_path / "k.png", tmp_path / "k.md"
     assert run("pack", KAIROS, "-o", cart).exit_code == 0
     assert run("unpack", cart, "-o", back).exit_code == 0
-    assert back.read_text() == KAIROS.read_text()
+    #  Bytes, not text: "byte-identical" is the claim, and comparing as text
+    #  would hide a host that wrote CRLF on the way out.
+    assert back.read_bytes() == KAIROS.read_bytes()
 
 
 def test_unpack_explains_a_plain_png(tmp_path):

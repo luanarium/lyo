@@ -47,7 +47,14 @@ class Plan:
         return parts
 
     def command(self) -> str:
-        return " ".join(self.argv())
+        """The argv as one string, for a definition that takes a command line.
+
+        A path with a space in it is ordinary on Windows -- `C:\\Users\\Jane
+        Doe\\...` -- and both systemd and Task Scheduler split on whitespace,
+        so anything containing one is quoted.
+        """
+        return " ".join(f'"{part}"' if " " in part else part
+                        for part in self.argv())
 
 
 @dataclass
@@ -167,13 +174,24 @@ class SchTasks:
 
     kind = "Windows scheduled task"
 
+    #  schtasks itself caps the command it will register. Hitting it gives an
+    #  unhelpful usage dump, so it is checked here instead.
+    TR_LIMIT = 261
+
     def unit_path(self, plan: Plan) -> Path:
         return Path(f"\\{plan.unit_name}")
 
     def definition(self, plan: Plan) -> str:
-        return (f'schtasks /create /tn "{plan.unit_name}" /sc onlogon /f \\\n'
-                f'  /tr "{plan.command()}"\n'
-                f'# working directory: {plan.working_dir}\n')
+        #  One line, and `rem` for the note: a dry run is printed so it can be
+        #  pasted, and cmd.exe has neither `\\` continuations nor `#` comments.
+        #  The command is itself quoted inside /tr's quotes, which cmd.exe
+        #  wants escaped. `install` passes it as one argument instead, so this
+        #  escaping belongs to the printed form only.
+        quoted = plan.command().replace('"', '\\"')
+        return (f'schtasks /create /tn "{plan.unit_name}" /sc onlogon /f '
+                f'/tr "{quoted}"\n'
+                f'rem Task Scheduler sets no working directory, which is why '
+                f'every path above is absolute ({plan.working_dir}).\n')
 
     def installed(self, plan: Plan) -> bool:
         return self.runner(["schtasks", "/query", "/tn", plan.unit_name]).returncode == 0
@@ -189,8 +207,17 @@ class SchTasks:
         return None
 
     def install(self, plan: Plan) -> Result:
+        command = plan.command()
+        if len(command) > self.TR_LIMIT:
+            return Result(
+                False,
+                f"the command is {len(command)} characters and Task Scheduler "
+                f"takes at most {self.TR_LIMIT}",
+                "shorten the paths involved -- a checkout nearer the drive "
+                "root, or `--db` somewhere shorter -- or register the task "
+                "yourself from `lyo service install --dry-run`.")
         done = self.runner(["schtasks", "/create", "/tn", plan.unit_name,
-                            "/sc", "onlogon", "/f", "/tr", plan.command()])
+                            "/sc", "onlogon", "/f", "/tr", command])
         return Result(done.returncode == 0, f"registered task {plan.unit_name}",
                       (done.stderr or done.stdout or "").strip())
 
@@ -224,6 +251,8 @@ class SchTasks:
         return Result(state == "running", state)
 
     def hint(self, plan: Plan) -> str:
+        #  schtasks cannot set a working directory, which is why every path in
+        #  the command is absolute: the task runs from wherever Windows puts it.
         return ("the task runs at logon. `lyo service start` runs it now "
                 "without waiting.")
 

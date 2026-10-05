@@ -44,6 +44,14 @@ def test_the_command_carries_absolute_paths(a_plan):
     assert all(Path(p).is_absolute() for p in argv if p.startswith("/"))
 
 
+def test_a_path_with_a_space_is_quoted(tmp_path):
+    """`C:\\Users\\Jane Doe\\...` is ordinary, and both hosts split on spaces."""
+    spaced = Plan(name="lyo", executable=Path("/opt/lyo bin/lyo"),
+                  working_dir=tmp_path, db=tmp_path / "lyo.db", source=None)
+    assert spaced.command().startswith('"/opt/lyo bin/lyo" run')
+    assert " ".join(spaced.argv()[1:]) in spaced.command()
+
+
 def test_a_plan_without_a_source_omits_it(tmp_path):
     made = plan("lyo", tmp_path / "lyo.db", None, working_dir=tmp_path)
     assert "run" in made.argv() and made.source is None
@@ -149,6 +157,30 @@ def test_a_task_is_removed_forcibly(a_plan):
     runner = Recorder()
     assert SchTasks(runner=runner).uninstall(a_plan).ok
     assert runner.calls == [["schtasks", "/delete", "/tn", "lyo", "/f"]]
+
+
+def test_the_printed_task_is_one_pasteable_line(tmp_path):
+    """A dry run is printed to be pasted, and cmd.exe is not a POSIX shell."""
+    spaced = Plan(name="lyo", executable=Path("C:/Program Files/lyo/lyo.exe"),
+                  working_dir=Path("C:/w"), db=Path("C:/w/lyo.db"), source=None)
+    command, note = SchTasks().definition(spaced).splitlines()
+
+    assert command.startswith("schtasks /create") and command.endswith('"')
+    assert not command.endswith("\\"), "no line continuation to get wrong"
+    assert '\\"C:/Program Files/lyo/lyo.exe\\"' in command, "quotes escaped for /tr"
+    assert note.startswith("rem "), "# is not a comment in cmd.exe"
+
+
+def test_a_command_too_long_for_schtasks_is_refused_before_it_runs(tmp_path):
+    """Task Scheduler takes 261 characters and answers a longer one with usage."""
+    runner = Recorder()
+    deep = Plan(name="lyo", executable=Path("C:/" + "x" * 300 + "/lyo.exe"),
+                working_dir=tmp_path, db=tmp_path / "lyo.db", source=None)
+
+    result = SchTasks(runner=runner).install(deep)
+    assert not result.ok and "261" in result.message
+    assert "shorten" in result.detail
+    assert runner.calls == [], "schtasks was never asked"
 
 
 def test_task_status_parses_the_list_output(a_plan):

@@ -17,10 +17,30 @@ from lyo.lang.resolve import ERROR, WARNING, Diagnostic
 _SEVERITY = {ERROR: {"fg": "red", "bold": True}, WARNING: {"fg": "yellow"}}
 
 
+def _widen_output() -> None:
+    """Let stdout carry whatever a game says.
+
+    A game writes its own messages, and they are often not ASCII -- Kairos
+    reports a hit with an emoji. On Windows a redirected stream gets the
+    locale's code page, cp1252 on an English install, so one such line would
+    end the run with a UnicodeEncodeError from inside a print. A console there
+    is already UTF-8 (Python writes it through the wide console API), so this
+    only affects the piped case, which is the one a service runs in.
+    """
+    if sys.platform != "win32":
+        return
+    import contextlib
+
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, ValueError, OSError):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, "-V", "--version", prog_name="lyo")
 def main() -> None:
     """lyo Engine -- a game engine for chatbot games."""
+    _widen_output()
 
 
 # --------------------------------------------------------------- lint
@@ -106,7 +126,9 @@ def tangle(source: Path, output: Path | None) -> None:
     if output is None:
         click.echo(result.text, nl=False)
     else:
-        output.write_text(result.text, encoding="utf-8")
+        #  newline="": no CRLF translation, so a tangle is the same file on
+        #  either host and `unpack` really is byte-identical.
+        output.write_text(result.text, encoding="utf-8", newline="")
         click.echo(f"{output}: {len(result.line_map)} lines of source")
 
 
@@ -150,7 +172,7 @@ def unpack(cart: Path, output: Path | None) -> None:
     if output is None:
         click.echo(markdown, nl=False)
     else:
-        output.write_text(markdown, encoding="utf-8")
+        output.write_text(markdown, encoding="utf-8", newline="")
         click.echo(f"{output}: {len(markdown):,} bytes")
 
 
