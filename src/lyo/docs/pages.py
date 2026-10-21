@@ -38,9 +38,9 @@ def _settings_table() -> str:
 def readme() -> str:
     return f"""# lyo Engine
 
-A game engine for chatbot games. You write a game as one markdown file — prose
-and code together — and lyo serves it to a chat room, where several people play
-the same world at once.
+An interactive fiction game engine for chatbots. You write a game as one
+markdown file — prose and code together — and lyo serves it to a chat room,
+where several people play the same world at once.
 
 ## Install
 

@@ -1,7 +1,7 @@
 [project]
 name = "lyo"
 version = "0.1.0"
-description = "A game engine for chatbot games"
+description = "An interactive fiction game engine for chatbots"
 authors = [
     { name = "luanarium", email = "luanarium@users.noreply.github.com" }
 ]
